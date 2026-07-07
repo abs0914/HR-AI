@@ -1,0 +1,165 @@
+import { redirect } from "next/navigation";
+import { requireSession } from "@/lib/auth";
+import { createClient } from "@/lib/supabase/server";
+import { can } from "@/lib/rbac";
+import { updateCompany, addOrgItem, inviteUser, updateUserRole } from "@/lib/actions";
+import { ActionForm } from "@/components/action-form";
+import { PageHeader, Button, Input, Label, Select, Card, CardContent, CardHeader, CardTitle, Badge } from "@/components/ui";
+import { createAdminClient } from "@/lib/supabase/admin";
+
+export default async function SettingsPage() {
+  const session = await requireSession();
+  if (!can(session.role, "settings.manage")) redirect("/dashboard");
+  const supabase = await createClient();
+
+  const [{ data: company }, { data: branches }, { data: departments }, { data: positions }, { data: holidays }, { data: users }, { data: templates }] = await Promise.all([
+    supabase.from("companies").select("*").eq("id", session.companyId).single(),
+    supabase.from("branches").select("id, name, address").eq("company_id", session.companyId),
+    supabase.from("departments").select("id, name").eq("company_id", session.companyId),
+    supabase.from("positions").select("id, title").eq("company_id", session.companyId),
+    supabase.from("company_holidays").select("id, name, holiday_date, holiday_type").eq("company_id", session.companyId).order("holiday_date"),
+    supabase.from("company_users").select("id, user_id, role, status").eq("company_id", session.companyId),
+    supabase.from("document_templates").select("id, title, template_type, company_id").or(`company_id.eq.${session.companyId},company_id.is.null`),
+  ]);
+
+  // emails for members (service role; page already owner/hr_admin gated)
+  const admin = createAdminClient();
+  const emails = new Map<string, string>();
+  for (const u of users ?? []) {
+    const { data } = await admin.auth.admin.getUserById(u.user_id);
+    if (data.user?.email) emails.set(u.user_id, data.user.email);
+  }
+  const isOwner = session.role === "owner";
+
+  return (
+    <>
+      <PageHeader title="Settings" subtitle="Company profile, organization, users, and templates" />
+      <div className="grid gap-6 lg:grid-cols-2">
+        <Card>
+          <CardHeader><CardTitle>Company profile</CardTitle></CardHeader>
+          <CardContent>
+            <ActionForm action={updateCompany} className="space-y-3" resetOnSuccess={false}>
+              <div><Label>Name</Label><Input name="name" defaultValue={company?.name} required /></div>
+              <div className="grid grid-cols-2 gap-3">
+                <div><Label>Business type</Label><Input name="business_type" defaultValue={company?.business_type ?? ""} /></div>
+                <div><Label>Industry</Label><Input name="industry" defaultValue={company?.industry ?? ""} /></div>
+              </div>
+              <div><Label>Address</Label><Input name="address" defaultValue={company?.address ?? ""} /></div>
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <Label>Payroll cycle</Label>
+                  <Select name="payroll_cycle" defaultValue={company?.payroll_cycle ?? "semi-monthly"}>
+                    <option value="weekly">Weekly</option>
+                    <option value="semi-monthly">Semi-monthly</option>
+                    <option value="monthly">Monthly</option>
+                  </Select>
+                </div>
+                <div><Label>Work schedule</Label><Input name="work_schedule" defaultValue={company?.work_schedule ?? ""} /></div>
+              </div>
+              <p className="text-xs text-gray-400">Timezone: {company?.timezone}</p>
+              <Button type="submit">Save profile</Button>
+            </ActionForm>
+          </CardContent>
+        </Card>
+
+        <Card>
+          <CardHeader><CardTitle>Users & roles {isOwner ? "" : "(view only — Owner manages roles)"}</CardTitle></CardHeader>
+          <CardContent className="space-y-3">
+            {(users ?? []).map((u) => (
+              <div key={u.id} className="flex items-center justify-between gap-2">
+                <div className="min-w-0">
+                  <p className="truncate text-sm text-gray-800">{emails.get(u.user_id) ?? u.user_id.slice(0, 8)}</p>
+                  <Badge status={u.status}>{u.status}</Badge>
+                </div>
+                {isOwner ? (
+                  <ActionForm action={updateUserRole} className="flex items-center gap-1.5" resetOnSuccess={false}>
+                    <input type="hidden" name="id" value={u.id} />
+                    <Select name="role" defaultValue={u.role} className="w-32 text-xs">
+                      {["owner", "hr_admin", "manager", "accountant", "employee"].map((r) => (
+                        <option key={r} value={r}>{r.replace("_", " ")}</option>
+                      ))}
+                    </Select>
+                    <Button type="submit" size="sm" variant="outline">Set</Button>
+                  </ActionForm>
+                ) : (
+                  <Badge>{u.role.replace("_", " ")}</Badge>
+                )}
+              </div>
+            ))}
+            {isOwner && (
+              <ActionForm action={inviteUser} className="mt-4 flex items-end gap-2 border-t border-line pt-4">
+                <div className="flex-1"><Label>Invite by email</Label><Input name="email" type="email" required placeholder="teammate@company.ph" /></div>
+                <div>
+                  <Label>Role</Label>
+                  <Select name="role" defaultValue="employee" className="w-32">
+                    {["hr_admin", "manager", "accountant", "employee"].map((r) => <option key={r} value={r}>{r.replace("_", " ")}</option>)}
+                  </Select>
+                </div>
+                <Button type="submit">Invite</Button>
+              </ActionForm>
+            )}
+          </CardContent>
+        </Card>
+
+        {(["branch", "department", "position"] as const).map((kind) => {
+          const list = kind === "branch" ? branches : kind === "department" ? departments : positions;
+          return (
+            <Card key={kind}>
+              <CardHeader><CardTitle className="capitalize">{kind === "branch" ? "Branches" : kind === "department" ? "Departments" : "Positions"}</CardTitle></CardHeader>
+              <CardContent>
+                <div className="mb-3 flex flex-wrap gap-1.5">
+                  {(list ?? []).map((item: any) => (
+                    <span key={item.id} className="rounded-full border border-line bg-muted-bg px-3 py-1 text-xs text-gray-700">
+                      {item.name ?? item.title}
+                    </span>
+                  ))}
+                  {!list?.length && <p className="text-xs text-gray-400">None yet.</p>}
+                </div>
+                <ActionForm action={addOrgItem} className="flex items-end gap-2">
+                  <input type="hidden" name="kind" value={kind} />
+                  <div className="flex-1"><Label>Add {kind}</Label><Input name="name" required /></div>
+                  <Button type="submit" variant="outline">Add</Button>
+                </ActionForm>
+              </CardContent>
+            </Card>
+          );
+        })}
+
+        <Card>
+          <CardHeader><CardTitle>Holidays</CardTitle></CardHeader>
+          <CardContent>
+            <div className="mb-3 max-h-40 space-y-1 overflow-y-auto">
+              {(holidays ?? []).map((h) => (
+                <p key={h.id} className="text-xs text-gray-600">{h.holiday_date} — {h.name} <span className="text-gray-400">({h.holiday_type})</span></p>
+              ))}
+              {!holidays?.length && <p className="text-xs text-gray-400">No holidays configured.</p>}
+            </div>
+            <ActionForm action={addOrgItem} className="flex items-end gap-2">
+              <input type="hidden" name="kind" value="holiday" />
+              <div className="flex-1"><Label>Name</Label><Input name="name" required placeholder="Independence Day" /></div>
+              <div><Label>Date</Label><Input type="date" name="holiday_date" required /></div>
+              <Button type="submit" variant="outline">Add</Button>
+            </ActionForm>
+          </CardContent>
+        </Card>
+
+        <Card>
+          <CardHeader><CardTitle>Document templates</CardTitle></CardHeader>
+          <CardContent>
+            <div className="max-h-56 space-y-1 overflow-y-auto">
+              {(templates ?? []).map((t) => (
+                <div key={t.id} className="flex items-center justify-between py-0.5">
+                  <p className="text-xs text-gray-700">{t.title}</p>
+                  <Badge>{t.company_id ? "custom" : "default"}</Badge>
+                </div>
+              ))}
+            </div>
+            <p className="mt-3 text-xs text-gray-400">
+              Global defaults ship with HR AI. Kawani AI uses your company template when one exists for the same type.
+            </p>
+          </CardContent>
+        </Card>
+      </div>
+    </>
+  );
+}
