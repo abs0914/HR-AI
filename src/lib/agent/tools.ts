@@ -683,10 +683,11 @@ export const TOOLS: ToolDef[] = [
       const { data: app } = await tc.supabase.from("applicants").select("*").eq("id", applicant_id).maybeSingle();
       if (!app) return { ok: false, message: "Applicant not found." };
       if (!app.resume_text) return { ok: false, message: "No readable resume text stored for this applicant. Upload a PDF/DOCX/TXT resume first." };
-      const OpenAI = (await import("openai")).default;
-      const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
-      const completion = await openai.chat.completions.create({
-        model: process.env.OPENAI_MODEL ?? "gpt-4o-mini",
+      // resume analysis is a premium task -> OpenAI when configured, Groq otherwise
+      const { openaiClient, groqClient, hasOpenAI, OPENAI_MODEL, GROQ_CHAT_MODEL } = await import("@/lib/agent/providers");
+      const client = hasOpenAI() ? openaiClient() : groqClient();
+      const completion = await client.chat.completions.create({
+        model: hasOpenAI() ? OPENAI_MODEL : GROQ_CHAT_MODEL,
         response_format: { type: "json_object" },
         messages: [
           { role: "system", content: "You are an HR recruitment analyst for a Philippine SME. Respond in JSON: {\"summary\": string (strengths, gaps, fit assessment, ~150 words), \"score\": number 1-10, \"interview_questions\": string[5]}." },

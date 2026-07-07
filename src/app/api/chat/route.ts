@@ -1,17 +1,21 @@
 import { NextRequest, NextResponse } from "next/server";
-import OpenAI from "openai";
 import { getSessionContext } from "@/lib/auth";
 import { createClient } from "@/lib/supabase/server";
 import { buildSystemPrompt } from "@/lib/agent/system-prompt";
-import { toolSchemas, runTool, type FileCard, type ApprovalCard } from "@/lib/agent/tools";
+import { classifyRequest, routeRequest, type Plan } from "@/lib/agent/router";
+import { runAgent } from "@/lib/agent/orchestrator";
+import { hasGroq, hasOpenAI, hasAnthropic } from "@/lib/agent/providers";
 
 export const maxDuration = 120;
 
 export async function POST(req: NextRequest) {
   const session = await getSessionContext();
   if (!session) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-  if (!process.env.OPENAI_API_KEY) {
-    return NextResponse.json({ error: "OPENAI_API_KEY is not configured. Add it to .env.local." }, { status: 500 });
+  if (!hasGroq() && !hasOpenAI() && !hasAnthropic()) {
+    return NextResponse.json(
+      { error: "No AI provider configured. Set GROQ_API_KEY (and optionally OPENAI_API_KEY / ANTHROPIC_API_KEY) in .env.local." },
+      { status: 500 }
+    );
   }
 
   const { message, conversationId: convIdIn, fileContext } = await req.json();
@@ -32,87 +36,72 @@ export async function POST(req: NextRequest) {
     conversationId = data.id;
   }
 
-  // persist user message
   await supabase.from("ai_messages").insert({
     conversation_id: conversationId, company_id: session.companyId,
     user_id: session.userId, role: "user", content: message,
     metadata: fileContext ? { fileContext } : null,
   });
 
-  // history (last 20)
-  const { data: history } = await supabase
-    .from("ai_messages")
-    .select("role, content, metadata")
-    .eq("conversation_id", conversationId)
-    .order("created_at", { ascending: true })
-    .limit(40);
+  const [{ data: history }, { data: company }] = await Promise.all([
+    supabase.from("ai_messages")
+      .select("role, content")
+      .eq("conversation_id", conversationId)
+      .order("created_at", { ascending: true })
+      .limit(40),
+    supabase.from("companies").select("name, plan").eq("id", session.companyId).single(),
+  ]);
+  const plan = (company?.plan ?? "premium") as Plan;
 
-  const { data: company } = await supabase
-    .from("companies").select("name").eq("id", session.companyId).single();
+  // 1. Groq classifies the request; 2. router picks the lane + engine
+  const category = await classifyRequest(message, !!fileContext);
+  const route = routeRequest(category, plan);
 
-  const messages: OpenAI.ChatCompletionMessageParam[] = [
-    { role: "system", content: buildSystemPrompt(session, company?.name ?? "your company") },
-    ...(history ?? [])
-      .filter((m) => m.role === "user" || m.role === "assistant")
-      .slice(-20)
-      .map((m) => ({ role: m.role as "user" | "assistant", content: m.content ?? "" })),
-  ];
-  if (fileContext) {
-    messages.push({
-      role: "system",
-      content: `The user just uploaded a file. Context: ${JSON.stringify(fileContext).slice(0, 6000)}`,
-    });
-  }
-
-  const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
-  const model = process.env.OPENAI_MODEL ?? "gpt-4o-mini";
-  const tc = { session, supabase, conversationId };
-
-  const files: FileCard[] = [];
-  const approvals: ApprovalCard[] = [];
-  const toolTrace: { name: string; ok: boolean; message: string }[] = [];
-
-  try {
-    for (let turn = 0; turn < 6; turn++) {
-      const completion = await openai.chat.completions.create({
-        model, messages, tools: toolSchemas(), tool_choice: "auto",
-      });
-      const choice = completion.choices[0].message;
-
-      if (!choice.tool_calls?.length) {
-        const text = choice.content ?? "(no response)";
-        await supabase.from("ai_messages").insert({
-          conversation_id: conversationId, company_id: session.companyId,
-          user_id: session.userId, role: "assistant", content: text,
-          metadata: { files, approvals, toolTrace },
-        });
-        return NextResponse.json({ conversationId, reply: text, files, approvals, toolTrace });
-      }
-
-      messages.push(choice);
-      for (const call of choice.tool_calls) {
-        if (call.type !== "function") continue;
-        let args: any = {};
-        try { args = JSON.parse(call.function.arguments || "{}"); } catch { /* keep {} */ }
-        const result = await runTool(call.function.name, args, tc);
-        if (result.file) files.push(result.file);
-        if (result.approval) approvals.push(result.approval);
-        toolTrace.push({ name: call.function.name, ok: result.ok, message: result.message });
-        messages.push({
-          role: "tool", tool_call_id: call.id,
-          content: JSON.stringify({ ok: result.ok, message: result.message, data: result.data ?? null }).slice(0, 12000),
-        });
-      }
-    }
-    // safety stop after 6 tool turns
-    const fallback = "I ran several steps but hit my per-request tool limit. Here is where things stand: " +
-      toolTrace.map((t) => `${t.name}: ${t.message}`).join(" | ");
+  // free-plan gate for premium capabilities — no model call needed
+  if (route.lane === "upgrade_required") {
+    const reply =
+      "Document generation and file analysis are available on the Premium plan. " +
+      "On your current Free plan I can answer HR questions, look up your data (attendance, leaves, employees), " +
+      "and help you navigate the app. Ask your workspace Owner about upgrading to unlock AI document generation, resume analysis, and payroll exports.";
     await supabase.from("ai_messages").insert({
       conversation_id: conversationId, company_id: session.companyId,
-      user_id: session.userId, role: "assistant", content: fallback,
-      metadata: { files, approvals, toolTrace },
+      user_id: session.userId, role: "assistant", content: reply,
+      metadata: { category, lane: route.lane, plan },
     });
-    return NextResponse.json({ conversationId, reply: fallback, files, approvals, toolTrace });
+    return NextResponse.json({ conversationId, reply, files: [], approvals: [], toolTrace: [], category });
+  }
+
+  const chatHistory = (history ?? [])
+    .filter((m) => m.role === "user" || m.role === "assistant")
+    .slice(-20)
+    .map((m) => ({ role: m.role as "user" | "assistant", content: m.content ?? "" }));
+
+  let systemPrompt = buildSystemPrompt(session, company?.name ?? "your company");
+  if (fileContext) {
+    systemPrompt += `\n\nThe user just uploaded a file. Context: ${JSON.stringify(fileContext).slice(0, 6000)}`;
+  }
+  if (route.lane === "longform") {
+    systemPrompt +=
+      "\n\nThis request involves a disciplinary or legally sensitive document. Draft carefully: follow Philippine due-process requirements (e.g. the twin-notice rule), keep the tone factual and neutral, clearly label the output as a DRAFT, and explicitly recommend review by a qualified HR or legal professional.";
+  }
+
+  try {
+    const run = await runAgent(route.provider, systemPrompt, chatHistory, {
+      session, supabase, conversationId,
+    });
+
+    await supabase.from("ai_messages").insert({
+      conversation_id: conversationId, company_id: session.companyId,
+      user_id: session.userId, role: "assistant", content: run.reply,
+      metadata: {
+        category, lane: route.lane, provider: run.provider, model: run.model,
+        files: run.files, approvals: run.approvals, toolTrace: run.toolTrace,
+      },
+    });
+    return NextResponse.json({
+      conversationId, reply: run.reply,
+      files: run.files, approvals: run.approvals, toolTrace: run.toolTrace,
+      category, provider: run.provider,
+    });
   } catch (e: any) {
     console.error("chat error:", e);
     return NextResponse.json({ error: e.message ?? "AI request failed" }, { status: 500 });

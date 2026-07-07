@@ -6,7 +6,7 @@ An AI-first HR operations platform for small and medium businesses in the Philip
 
 - **Frontend/Backend:** Next.js 15 (App Router), React 19, TypeScript, Tailwind CSS 4
 - **Database/Auth/Storage:** Supabase (PostgreSQL + Row Level Security)
-- **AI:** OpenAI (chat with tool-calling, Whisper for voice transcription)
+- **AI (3-engine router):** Groq (front desk — classification, Q&A, data summaries, Whisper voice), OpenAI (premium task engine — tool execution, document generation, resume analysis), Anthropic Claude (premium long-form engine — disciplinary/legal-sensitive drafting)
 - **Files:** `docx`, `pdf-lib`, `xlsx` for DOCX/PDF/XLSX/CSV generation; `pdf-parse` + `mammoth` for text extraction
 
 ## Setup
@@ -28,9 +28,12 @@ cp .env.example .env.local
 | `NEXT_PUBLIC_SUPABASE_URL` | Supabase → Project Settings → API |
 | `NEXT_PUBLIC_SUPABASE_ANON_KEY` | Same page ("anon public") |
 | `SUPABASE_SERVICE_ROLE_KEY` | Same page ("service_role" — keep secret) |
-| `OPENAI_API_KEY` | [platform.openai.com](https://platform.openai.com/api-keys) |
-| `OPENAI_MODEL` | Optional, defaults to `gpt-4o-mini` |
+| `GROQ_API_KEY` | [console.groq.com](https://console.groq.com/keys) — the default chat engine; also classifies every request and transcribes voice |
+| `OPENAI_API_KEY` | [platform.openai.com](https://platform.openai.com/api-keys) — premium task engine (documents, resume analysis) |
+| `ANTHROPIC_API_KEY` | [platform.claude.com](https://platform.claude.com) — optional; long-form/disciplinary document drafting (`claude-opus-4-8`) |
 | `APP_URL` | `http://localhost:3000` for local dev |
+
+At least one AI key is required. Missing engines degrade gracefully: no Anthropic → long-form docs go to OpenAI; no OpenAI → tasks go to Groq; no Groq → everything goes to OpenAI.
 
 ### 3. Run
 
@@ -57,7 +60,7 @@ Open http://localhost:3000.
 ## Architecture notes
 
 - **RBAC:** roles are `owner`, `hr_admin`, `manager`, `accountant`, `employee`. Postgres RLS scopes every table by company and role (managers see only their team, employees only themselves). The app layer adds column-level salary masking ([src/lib/rbac.ts](src/lib/rbac.ts)) since RLS is row-level only. Every server action and API route re-checks permissions.
-- **Agent:** [src/app/api/chat/route.ts](src/app/api/chat/route.ts) runs an OpenAI tool-calling loop (max 6 turns) over ~20 backend tools ([src/lib/agent/tools.ts](src/lib/agent/tools.ts)). Read tools run with the user's RLS-scoped client; sensitive writes (create employee, approve leave, payroll export…) create **pending `ai_actions`** that only execute after a human with approval rights signs off.
+- **Agent + model router:** every message is first classified by Groq's 8B model into a request category ([src/lib/agent/router.ts](src/lib/agent/router.ts)), then routed: Q&A / policy questions / data lookups stay on **Groq** (Llama 3.3 70B with tools — "database query + Groq summary"); document generation, payroll prep, and workflow actions go to **OpenAI**; disciplinary and legally sensitive drafting goes to **Claude** (`claude-opus-4-8` via the Anthropic SDK, native tool use). The company `plan` gates premium lanes: Free = Groq only with an upgrade prompt for documents/file analysis. The tool loop (max 6 turns, ~20 backend tools in [src/lib/agent/tools.ts](src/lib/agent/tools.ts)) is shared across engines ([src/lib/agent/orchestrator.ts](src/lib/agent/orchestrator.ts)). Read tools run with the user's RLS-scoped client; sensitive writes (create employee, approve leave, payroll export…) create **pending `ai_actions`** that only execute after a human with approval rights signs off.
 - **Documents:** templates live in `document_templates` (`{{variable}}` placeholders; company templates override global defaults). Generated files are stored as DOCX + PDF in Supabase Storage under `company_id/employee_id/document_type/`, recorded in `employee_documents` as **drafts**, and re-exportable in either format from the stored text.
 - **Audit:** `audit_logs` inserts go through the service role only (no client insert policy), so entries can't be forged or skipped; reads are Owner/HR Admin only.
 - **Voice:** browser MediaRecorder → `/api/transcribe` (Whisper) → text lands in the chat input for editing before send. Falls back to "Voice input is unavailable" if mic or API access fails.

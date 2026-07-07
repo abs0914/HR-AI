@@ -419,12 +419,18 @@ export async function updateCompany(fd: FormData): Promise<ActionResult> {
   const session = await requireSession();
   try { assertCan(session.role, "settings.manage"); } catch (e: any) { return fail(e.message); }
   const supabase = await createClient();
-  const { error } = await supabase.from("companies").update({
+  const update: Record<string, unknown> = {
     name: str(fd, "name") ?? undefined,
     business_type: str(fd, "business_type"), industry: str(fd, "industry"),
     address: str(fd, "address"), payroll_cycle: str(fd, "payroll_cycle"),
     work_schedule: str(fd, "work_schedule"), updated_at: new Date().toISOString(),
-  }).eq("id", session.companyId);
+  };
+  const plan = str(fd, "plan");
+  if (plan && ["free", "premium", "enterprise"].includes(plan)) {
+    if (session.role !== "owner") return fail("Only the Owner can change the plan.");
+    update.plan = plan;
+  }
+  const { error } = await supabase.from("companies").update(update).eq("id", session.companyId);
   if (error) return fail(error.message);
   await logAudit({ companyId: session.companyId, userId: session.userId, module: "settings", action: "company_updated" });
   revalidatePath("/settings");

@@ -56,6 +56,16 @@ export default async function SettingsPage() {
                 </div>
                 <div><Label>Work schedule</Label><Input name="work_schedule" defaultValue={company?.work_schedule ?? ""} /></div>
               </div>
+              {isOwner && (
+                <div>
+                  <Label>Plan (drives AI routing)</Label>
+                  <Select name="plan" defaultValue={company?.plan ?? "premium"}>
+                    <option value="free">Free — Groq Q&A only, no AI documents/file analysis</option>
+                    <option value="premium">Premium — Groq chat + OpenAI tasks + Claude documents</option>
+                    <option value="enterprise">Enterprise — all engines, custom policies</option>
+                  </Select>
+                </div>
+              )}
               <p className="text-xs text-gray-400">Timezone: {company?.timezone}</p>
               <Button type="submit">Save profile</Button>
             </ActionForm>
