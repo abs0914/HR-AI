@@ -419,16 +419,17 @@ export async function updateCompany(fd: FormData): Promise<ActionResult> {
   const session = await requireSession();
   try { assertCan(session.role, "settings.manage"); } catch (e: any) { return fail(e.message); }
   const supabase = await createClient();
-  const update: Record<string, unknown> = {
-    name: str(fd, "name") ?? undefined,
-    business_type: str(fd, "business_type"), industry: str(fd, "industry"),
-    address: str(fd, "address"), payroll_cycle: str(fd, "payroll_cycle"),
-    work_schedule: str(fd, "work_schedule"), updated_at: new Date().toISOString(),
-  };
+  // only update fields the submitting form actually contained
+  const update: Record<string, unknown> = { updated_at: new Date().toISOString() };
+  if (str(fd, "name")) update.name = str(fd, "name");
+  for (const f of ["business_type", "industry", "address", "payroll_cycle", "work_schedule"]) {
+    if (fd.has(f)) update[f] = str(fd, f);
+  }
   const plan = str(fd, "plan");
   if (plan && ["free", "premium", "enterprise"].includes(plan)) {
     if (session.role !== "owner") return fail("Only the Owner can change the plan.");
     update.plan = plan;
+    update.plan_expires_at = null; // manual dev-mode change has no expiry
   }
   const { error } = await supabase.from("companies").update(update).eq("id", session.companyId);
   if (error) return fail(error.message);

@@ -5,12 +5,21 @@ import { buildSystemPrompt } from "@/lib/agent/system-prompt";
 import { classifyRequest, routeRequest, type Plan } from "@/lib/agent/router";
 import { runAgent } from "@/lib/agent/orchestrator";
 import { hasGroq, hasOpenAI, hasAnthropic } from "@/lib/agent/providers";
+import { rateLimit, LIMITS } from "@/lib/rate-limit";
+import { effectivePlan } from "@/lib/billing";
 
 export const maxDuration = 120;
 
 export async function POST(req: NextRequest) {
   const session = await getSessionContext();
   if (!session) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  const rl = rateLimit(`chat:${session.userId}`, LIMITS.chat.limit, LIMITS.chat.windowMs);
+  if (!rl.allowed) {
+    return NextResponse.json(
+      { error: `You're sending messages too quickly. Try again in ${rl.retryAfterSeconds}s.` },
+      { status: 429, headers: { "Retry-After": String(rl.retryAfterSeconds) } }
+    );
+  }
   if (!hasGroq() && !hasOpenAI() && !hasAnthropic()) {
     return NextResponse.json(
       { error: "No AI provider configured. Set GROQ_API_KEY (and optionally OPENAI_API_KEY / ANTHROPIC_API_KEY) in .env.local." },
@@ -48,9 +57,9 @@ export async function POST(req: NextRequest) {
       .eq("conversation_id", conversationId)
       .order("created_at", { ascending: true })
       .limit(40),
-    supabase.from("companies").select("name, plan").eq("id", session.companyId).single(),
+    supabase.from("companies").select("name, plan, plan_expires_at").eq("id", session.companyId).single(),
   ]);
-  const plan = (company?.plan ?? "premium") as Plan;
+  const plan: Plan = effectivePlan(company ?? {});
 
   // 1. Groq classifies the request; 2. router picks the lane + engine
   const category = await classifyRequest(message, !!fileContext);
@@ -98,6 +107,7 @@ export async function POST(req: NextRequest) {
       user_id: session.userId, role: "assistant", content: run.reply,
       metadata: {
         category, lane: route.lane, provider: run.provider, model: run.model,
+        usage: run.usage,
         files: run.files, approvals: run.approvals, toolTrace: run.toolTrace,
       },
     });

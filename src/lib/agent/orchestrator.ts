@@ -13,6 +13,7 @@ export type AgentRun = {
   toolTrace: { name: string; ok: boolean; message: string }[];
   provider: string;
   model: string;
+  usage: { inputTokens: number; outputTokens: number };
 };
 
 type HistoryMessage = { role: "user" | "assistant"; content: string };
@@ -36,15 +37,18 @@ async function runOpenAIStyleLoop(
   const files: FileCard[] = [];
   const approvals: ApprovalCard[] = [];
   const toolTrace: AgentRun["toolTrace"] = [];
+  const usage = { inputTokens: 0, outputTokens: 0 };
 
   for (let turn = 0; turn < MAX_TOOL_TURNS; turn++) {
     const completion = await client.chat.completions.create({
       model, messages, tools: toolSchemas(toolNames), tool_choice: "auto",
     });
+    usage.inputTokens += completion.usage?.prompt_tokens ?? 0;
+    usage.outputTokens += completion.usage?.completion_tokens ?? 0;
     const choice = completion.choices[0].message;
 
     if (!choice.tool_calls?.length) {
-      return { reply: choice.content ?? "(no response)", files, approvals, toolTrace };
+      return { reply: choice.content ?? "(no response)", files, approvals, toolTrace, usage };
     }
     messages.push(choice);
     for (const call of choice.tool_calls) {
@@ -64,7 +68,7 @@ async function runOpenAIStyleLoop(
   return {
     reply: "I ran several steps but hit my per-request tool limit. Status: " +
       toolTrace.map((t) => `${t.name}: ${t.message}`).join(" | "),
-    files, approvals, toolTrace,
+    files, approvals, toolTrace, usage,
   };
 }
 
@@ -88,6 +92,7 @@ async function runAnthropicLoop(
   const files: FileCard[] = [];
   const approvals: ApprovalCard[] = [];
   const toolTrace: AgentRun["toolTrace"] = [];
+  const usage = { inputTokens: 0, outputTokens: 0 };
 
   for (let turn = 0; turn < MAX_TOOL_TURNS; turn++) {
     const response = await client.messages.create({
@@ -98,11 +103,13 @@ async function runAnthropicLoop(
       tools: anthropicTools(),
       messages,
     });
+    usage.inputTokens += response.usage.input_tokens;
+    usage.outputTokens += response.usage.output_tokens;
 
     if (response.stop_reason === "refusal") {
       return {
         reply: "I can't help with that request. For sensitive employment matters, please consult a qualified HR or legal professional.",
-        files, approvals, toolTrace,
+        files, approvals, toolTrace, usage,
       };
     }
 
@@ -113,7 +120,7 @@ async function runAnthropicLoop(
       const text = response.content
         .filter((b): b is Anthropic.TextBlock => b.type === "text")
         .map((b) => b.text).join("\n");
-      return { reply: text || "(no response)", files, approvals, toolTrace };
+      return { reply: text || "(no response)", files, approvals, toolTrace, usage };
     }
 
     messages.push({ role: "assistant", content: response.content });
@@ -135,7 +142,7 @@ async function runAnthropicLoop(
   return {
     reply: "I ran several steps but hit my per-request tool limit. Status: " +
       toolTrace.map((t) => `${t.name}: ${t.message}`).join(" | "),
-    files, approvals, toolTrace,
+    files, approvals, toolTrace, usage,
   };
 }
 

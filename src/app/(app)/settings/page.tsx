@@ -6,6 +6,7 @@ import { updateCompany, addOrgItem, inviteUser, updateUserRole, linkUserToEmploy
 import { ActionForm } from "@/components/action-form";
 import { PageHeader, Button, Input, Label, Select, Card, CardContent, CardHeader, CardTitle, Badge, Textarea } from "@/components/ui";
 import { createAdminClient } from "@/lib/supabase/admin";
+import { hasPayMongo, effectivePlan } from "@/lib/billing";
 
 export default async function SettingsPage() {
   const session = await requireSession();
@@ -24,6 +25,8 @@ export default async function SettingsPage() {
     supabase.from("company_policies").select("id, title, category, created_at").eq("company_id", session.companyId).order("title"),
   ]);
   const employeeByUser = new Map((employees ?? []).filter((e) => e.user_id).map((e) => [e.user_id as string, e]));
+  const billingEnabled = hasPayMongo();
+  const currentPlan = effectivePlan(company ?? {});
 
   // emails for members (service role; page already owner/hr_admin gated)
   const admin = createAdminClient();
@@ -59,19 +62,47 @@ export default async function SettingsPage() {
                 </div>
                 <div><Label>Work schedule</Label><Input name="work_schedule" defaultValue={company?.work_schedule ?? ""} /></div>
               </div>
-              {isOwner && (
-                <div>
-                  <Label>Plan (drives AI routing)</Label>
-                  <Select name="plan" defaultValue={company?.plan ?? "premium"}>
-                    <option value="free">Free — Groq Q&A only, no AI documents/file analysis</option>
-                    <option value="premium">Premium — Groq chat + OpenAI tasks + Claude documents</option>
-                    <option value="enterprise">Enterprise — all engines, custom policies</option>
-                  </Select>
-                </div>
-              )}
               <p className="text-xs text-gray-400">Timezone: {company?.timezone}</p>
               <Button type="submit">Save profile</Button>
             </ActionForm>
+          </CardContent>
+        </Card>
+
+        <Card>
+          <CardHeader><CardTitle>Billing & plan</CardTitle></CardHeader>
+          <CardContent className="space-y-3">
+            <p className="text-sm text-gray-700">
+              Current plan: <Badge status={currentPlan === "free" ? "inactive" : "active"}>{currentPlan}</Badge>
+              {company?.plan_expires_at && (
+                <span className="ml-2 text-xs text-gray-400">
+                  {new Date(company.plan_expires_at).getTime() < Date.now() ? "expired" : "renews/expires"}{" "}
+                  {new Date(company.plan_expires_at).toLocaleDateString("en-PH", { dateStyle: "medium" })}
+                </span>
+              )}
+            </p>
+            <p className="text-xs text-gray-500">
+              Free: Groq Q&A and data lookups only. Premium (₱1,499/30 days): AI document generation, resume analysis, payroll exports, Claude drafting. Enterprise (₱6,999/30 days): everything, priority support.
+            </p>
+            {isOwner && billingEnabled && (
+              <div className="flex gap-2">
+                <a href="/api/billing/checkout?plan=premium"><Button>Upgrade to Premium — GCash/Maya/Card</Button></a>
+                <a href="/api/billing/checkout?plan=enterprise"><Button variant="outline">Enterprise</Button></a>
+              </div>
+            )}
+            {isOwner && !billingEnabled && (
+              <ActionForm action={updateCompany} className="flex items-end gap-2" resetOnSuccess={false}>
+                <input type="hidden" name="name" value={company?.name ?? ""} />
+                <div className="flex-1">
+                  <Label>Plan (dev mode — PayMongo not configured)</Label>
+                  <Select name="plan" defaultValue={company?.plan ?? "premium"}>
+                    <option value="free">Free</option>
+                    <option value="premium">Premium</option>
+                    <option value="enterprise">Enterprise</option>
+                  </Select>
+                </div>
+                <Button type="submit" variant="outline">Set plan</Button>
+              </ActionForm>
+            )}
           </CardContent>
         </Card>
 

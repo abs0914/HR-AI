@@ -1,10 +1,16 @@
 import { NextRequest, NextResponse } from "next/server";
 import { groqClient, openaiClient, hasGroq, hasOpenAI } from "@/lib/agent/providers";
 import { getSessionContext } from "@/lib/auth";
+import { rateLimit, LIMITS } from "@/lib/rate-limit";
 
 export async function POST(req: NextRequest) {
   const session = await getSessionContext();
   if (!session) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  const rl = rateLimit(`transcribe:${session.userId}`, LIMITS.transcribe.limit, LIMITS.transcribe.windowMs);
+  if (!rl.allowed) {
+    return NextResponse.json({ error: "Too many voice requests — please wait a moment." },
+      { status: 429, headers: { "Retry-After": String(rl.retryAfterSeconds) } });
+  }
   if (!hasGroq() && !hasOpenAI()) {
     return NextResponse.json({ error: "Voice input is unavailable. Please type your request." }, { status: 503 });
   }

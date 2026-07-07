@@ -1,0 +1,30 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    env:
+      # placeholders — build only needs the vars to exist
+      NEXT_PUBLIC_SUPABASE_URL: https://placeholder.supabase.co
+      NEXT_PUBLIC_SUPABASE_ANON_KEY: placeholder
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - name: Unit checks
+        run: |
+          node --experimental-strip-types scripts/check-template.mjs
+          node --experimental-strip-types scripts/check-rate-limit.mjs
+          node --experimental-strip-types scripts/check-billing.mjs
+      - name: Type check
+        run: npx tsc --noEmit
+      - name: Build
+        run: npm run build

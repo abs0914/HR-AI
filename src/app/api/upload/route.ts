@@ -4,6 +4,7 @@ import { createClient } from "@/lib/supabase/server";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { can } from "@/lib/rbac";
 import { logAudit } from "@/lib/audit";
+import { rateLimit, LIMITS } from "@/lib/rate-limit";
 import * as XLSX from "xlsx";
 
 export const maxDuration = 60;
@@ -38,6 +39,11 @@ async function extractText(file: File): Promise<string | null> {
 export async function POST(req: NextRequest) {
   const session = await getSessionContext();
   if (!session) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  const rl = rateLimit(`upload:${session.userId}`, LIMITS.upload.limit, LIMITS.upload.windowMs);
+  if (!rl.allowed) {
+    return NextResponse.json({ error: "Too many uploads — please wait a moment." },
+      { status: 429, headers: { "Retry-After": String(rl.retryAfterSeconds) } });
+  }
 
   const form = await req.formData();
   const file = form.get("file");

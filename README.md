@@ -35,6 +35,8 @@ cp .env.example .env.local
 
 At least one AI key is required. Missing engines degrade gracefully: no Anthropic → long-form docs go to OpenAI; no OpenAI → tasks go to Groq; no Groq → everything goes to OpenAI.
 
+**Billing (optional):** set `PAYMONGO_SECRET_KEY` + `PAYMONGO_WEBHOOK_SECRET` to enable GCash/Maya/card checkout for plan upgrades (Settings → Billing & plan). Register a PayMongo webhook pointing at `{APP_URL}/api/billing/webhook` subscribed to `checkout_session.payment.paid`. A payment activates the plan for 30 days; expired plans lapse to Free automatically. Without PayMongo keys, the Owner can set the plan manually in Settings (dev mode).
+
 ### 3. Run
 
 ```bash
