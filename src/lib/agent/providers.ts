@@ -26,7 +26,8 @@ export function anthropicClient() {
   return new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
 }
 
-export const GROQ_CHAT_MODEL = process.env.GROQ_MODEL ?? "llama-3.3-70b-versatile";
+// gpt-oss-120b: far more reliable at tool calling than llama-3.3-70b, still Groq-cheap
+export const GROQ_CHAT_MODEL = process.env.GROQ_MODEL ?? "openai/gpt-oss-120b";
 export const GROQ_CLASSIFIER_MODEL = process.env.GROQ_CLASSIFIER_MODEL ?? "llama-3.1-8b-instant";
 export const OPENAI_MODEL = process.env.OPENAI_MODEL ?? "gpt-4o-mini";
 export const ANTHROPIC_MODEL = process.env.ANTHROPIC_MODEL ?? "claude-opus-4-8";

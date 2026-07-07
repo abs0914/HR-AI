@@ -2,9 +2,9 @@ import { redirect } from "next/navigation";
 import { requireSession } from "@/lib/auth";
 import { createClient } from "@/lib/supabase/server";
 import { can } from "@/lib/rbac";
-import { updateCompany, addOrgItem, inviteUser, updateUserRole, linkUserToEmployee } from "@/lib/actions";
+import { updateCompany, addOrgItem, inviteUser, updateUserRole, linkUserToEmployee, savePolicy, deletePolicy } from "@/lib/actions";
 import { ActionForm } from "@/components/action-form";
-import { PageHeader, Button, Input, Label, Select, Card, CardContent, CardHeader, CardTitle, Badge } from "@/components/ui";
+import { PageHeader, Button, Input, Label, Select, Card, CardContent, CardHeader, CardTitle, Badge, Textarea } from "@/components/ui";
 import { createAdminClient } from "@/lib/supabase/admin";
 
 export default async function SettingsPage() {
@@ -12,7 +12,7 @@ export default async function SettingsPage() {
   if (!can(session.role, "settings.manage")) redirect("/dashboard");
   const supabase = await createClient();
 
-  const [{ data: company }, { data: branches }, { data: departments }, { data: positions }, { data: holidays }, { data: users }, { data: templates }, { data: employees }] = await Promise.all([
+  const [{ data: company }, { data: branches }, { data: departments }, { data: positions }, { data: holidays }, { data: users }, { data: templates }, { data: employees }, { data: policies }] = await Promise.all([
     supabase.from("companies").select("*").eq("id", session.companyId).single(),
     supabase.from("branches").select("id, name, address").eq("company_id", session.companyId),
     supabase.from("departments").select("id, name").eq("company_id", session.companyId),
@@ -21,6 +21,7 @@ export default async function SettingsPage() {
     supabase.from("company_users").select("id, user_id, role, status").eq("company_id", session.companyId),
     supabase.from("document_templates").select("id, title, template_type, company_id").or(`company_id.eq.${session.companyId},company_id.is.null`),
     supabase.from("employees").select("id, first_name, last_name, user_id").eq("company_id", session.companyId).order("last_name"),
+    supabase.from("company_policies").select("id, title, category, created_at").eq("company_id", session.companyId).order("title"),
   ]);
   const employeeByUser = new Map((employees ?? []).filter((e) => e.user_id).map((e) => [e.user_id as string, e]));
 
@@ -171,6 +172,44 @@ export default async function SettingsPage() {
               <div className="flex-1"><Label>Name</Label><Input name="name" required placeholder="Independence Day" /></div>
               <div><Label>Date</Label><Input type="date" name="holiday_date" required /></div>
               <Button type="submit" variant="outline">Add</Button>
+            </ActionForm>
+          </CardContent>
+        </Card>
+
+        <Card className="lg:col-span-2">
+          <CardHeader><CardTitle>Company policies (Kawani AI knowledge base)</CardTitle></CardHeader>
+          <CardContent>
+            <div className="mb-4 space-y-1.5">
+              {(policies ?? []).map((p) => (
+                <div key={p.id} className="flex items-center justify-between rounded-lg border border-line px-3 py-2">
+                  <p className="text-sm text-gray-800">{p.title} <Badge>{p.category}</Badge></p>
+                  <ActionForm action={deletePolicy} confirmText={`Delete policy "${p.title}"?`}>
+                    <input type="hidden" name="id" value={p.id} />
+                    <Button type="submit" size="sm" variant="ghost">Delete</Button>
+                  </ActionForm>
+                </div>
+              ))}
+              {!policies?.length && (
+                <p className="text-xs text-gray-400">
+                  No policies yet. Add your house rules here — Kawani AI quotes them when anyone asks &ldquo;What is our policy on…?&rdquo;
+                </p>
+              )}
+            </div>
+            <ActionForm action={savePolicy} className="grid grid-cols-1 gap-3 sm:grid-cols-3">
+              <div className="sm:col-span-2"><Label>Policy title</Label><Input name="title" required placeholder="Attendance and Tardiness Policy" /></div>
+              <div>
+                <Label>Category</Label>
+                <Select name="category" defaultValue="general">
+                  {["general", "attendance", "leave", "conduct", "compensation", "safety", "data_privacy"].map((c) => (
+                    <option key={c} value={c}>{c.replace("_", " ")}</option>
+                  ))}
+                </Select>
+              </div>
+              <div className="sm:col-span-3">
+                <Label>Policy text</Label>
+                <Textarea name="content" required rows={5} placeholder="Paste the full policy text here…" />
+              </div>
+              <div className="sm:col-span-3"><Button type="submit">Save policy</Button></div>
             </ActionForm>
           </CardContent>
         </Card>

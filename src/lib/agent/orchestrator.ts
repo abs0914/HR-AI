@@ -4,7 +4,7 @@ import {
   groqClient, openaiClient, anthropicClient, hasOpenAI,
   GROQ_CHAT_MODEL, OPENAI_MODEL, ANTHROPIC_MODEL,
 } from "@/lib/agent/providers";
-import { toolSchemas, runTool, TOOLS, type ToolContext, type FileCard, type ApprovalCard } from "@/lib/agent/tools";
+import { toolSchemas, runTool, TOOLS, READ_TOOL_NAMES, type ToolContext, type FileCard, type ApprovalCard } from "@/lib/agent/tools";
 
 export type AgentRun = {
   reply: string;
@@ -26,7 +26,8 @@ async function runOpenAIStyleLoop(
   model: string,
   systemPrompt: string,
   history: HistoryMessage[],
-  tc: ToolContext
+  tc: ToolContext,
+  toolNames?: string[]
 ): Promise<Omit<AgentRun, "provider" | "model">> {
   const messages: OpenAI.ChatCompletionMessageParam[] = [
     { role: "system", content: systemPrompt },
@@ -38,7 +39,7 @@ async function runOpenAIStyleLoop(
 
   for (let turn = 0; turn < MAX_TOOL_TURNS; turn++) {
     const completion = await client.chat.completions.create({
-      model, messages, tools: toolSchemas(), tool_choice: "auto",
+      model, messages, tools: toolSchemas(toolNames), tool_choice: "auto",
     });
     const choice = completion.choices[0].message;
 
@@ -162,6 +163,18 @@ export async function runAgent(
   }
   const client = provider === "groq" ? groqClient() : openaiClient();
   const model = provider === "groq" ? GROQ_CHAT_MODEL : OPENAI_MODEL;
-  const run = await runOpenAIStyleLoop(client, model, systemPrompt, history, tc);
-  return { ...run, provider, model };
+  // Groq (front desk) gets only the read/query tools — simpler schemas, more reliable calls
+  const toolNames = provider === "groq" ? READ_TOOL_NAMES : undefined;
+  try {
+    const run = await runOpenAIStyleLoop(client, model, systemPrompt, history, tc, toolNames);
+    return { ...run, provider, model };
+  } catch (e: any) {
+    // Groq occasionally emits malformed tool calls ("Failed to call a function") — retry on OpenAI
+    if (provider === "groq" && hasOpenAI()) {
+      console.error("groq failed, falling back to openai:", e.message);
+      const run = await runOpenAIStyleLoop(openaiClient(), OPENAI_MODEL, systemPrompt, history, tc);
+      return { ...run, provider: "openai", model: OPENAI_MODEL };
+    }
+    throw e;
+  }
 }

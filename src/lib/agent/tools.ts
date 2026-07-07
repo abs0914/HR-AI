@@ -761,6 +761,34 @@ export const TOOLS: ToolDef[] = [
     },
   },
   {
+    name: "search_company_policies",
+    description: "Search the company's policy knowledge base (handbook, memos-as-policy, house rules). Use this to ground any answer about company policy — do not answer policy questions from general knowledge. Pass an empty query to list all policy titles.",
+    parameters: {
+      type: "object",
+      properties: { query: { type: "string", description: "keywords, e.g. 'attendance tardiness' — or empty to list all" } },
+    },
+    execute: async ({ query }, tc) => {
+      const q = String(query ?? "").trim();
+      let request = tc.supabase.from("company_policies")
+        .select("id, title, category, content")
+        .eq("company_id", tc.session.companyId);
+      if (q) {
+        // websearch FTS with an ilike fallback for terms the parser drops
+        request = request.or(`search_vector.wfts.${q.replace(/[(),]/g, " ")},title.ilike.%${q}%`);
+      }
+      const { data, error } = await request.limit(5);
+      if (error) return { ok: false, message: error.message };
+      if (!data?.length) {
+        return { ok: true, message: q ? `No company policy found matching "${q}". Tell the user no policy is on file for this topic and suggest HR add one in Settings.` : "No policies recorded yet. Owners/HR Admins can add them in Settings > Company policies." };
+      }
+      return {
+        ok: true,
+        message: `Found ${data.length} polic${data.length === 1 ? "y" : "ies"}.`,
+        data: data.map((p) => ({ title: p.title, category: p.category, content: String(p.content).slice(0, 3000) })),
+      };
+    },
+  },
+  {
     name: "list_pending_approvals",
     description: "List AI actions waiting for human approval.",
     parameters: { type: "object", properties: {} },
@@ -774,8 +802,17 @@ export const TOOLS: ToolDef[] = [
   },
 ];
 
-export function toolSchemas() {
-  return TOOLS.map((t) => ({
+// Read/query tools — the "front desk" (Groq) set. Fewer + simpler schemas keep
+// small models reliable at tool calling; write/generate tools live in the task lane.
+export const READ_TOOL_NAMES = [
+  "search_employee", "get_employee_profile", "list_missing_documents", "list_regularization_due",
+  "summarize_attendance", "list_late_employees", "get_leave_balance", "list_pending_leaves",
+  "search_company_policies", "list_compliance_reminders", "list_pending_approvals", "list_applicants",
+  "create_leave_request", // employees file leave conversationally — safe, always ends pending
+];
+
+export function toolSchemas(names?: string[]) {
+  return TOOLS.filter((t) => !names || names.includes(t.name)).map((t) => ({
     type: "function" as const,
     function: { name: t.name, description: t.description, parameters: t.parameters },
   }));

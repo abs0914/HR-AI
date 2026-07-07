@@ -544,6 +544,50 @@ export async function updateUserRole(fd: FormData): Promise<ActionResult> {
   return done("Role updated.");
 }
 
+// ============ COMPANY POLICIES ============
+
+export async function savePolicy(fd: FormData): Promise<ActionResult> {
+  const session = await requireSession();
+  try { assertCan(session.role, "settings.manage"); } catch (e: any) { return fail(e.message); }
+  const title = str(fd, "title");
+  const content = str(fd, "content");
+  if (!title || !content) return fail("Title and policy text are required.");
+  const supabase = await createClient();
+  const id = str(fd, "id");
+  const record = {
+    company_id: session.companyId, title,
+    category: str(fd, "category") ?? "general",
+    content, created_by: session.userId, updated_at: new Date().toISOString(),
+  };
+  const { error } = id
+    ? await supabase.from("company_policies").update(record).eq("id", id).eq("company_id", session.companyId)
+    : await supabase.from("company_policies").insert(record);
+  if (error) return fail(error.message);
+  await logAudit({
+    companyId: session.companyId, userId: session.userId,
+    module: "settings", action: id ? "policy_updated" : "policy_created", details: { title },
+  });
+  revalidatePath("/settings");
+  return done(`Policy "${title}" saved. Kawani AI will now use it to answer policy questions.`);
+}
+
+export async function deletePolicy(fd: FormData): Promise<ActionResult> {
+  const session = await requireSession();
+  try { assertCan(session.role, "settings.manage"); } catch (e: any) { return fail(e.message); }
+  const id = str(fd, "id");
+  if (!id) return fail("Missing policy id.");
+  const supabase = await createClient();
+  const { error } = await supabase.from("company_policies").delete()
+    .eq("id", id).eq("company_id", session.companyId);
+  if (error) return fail(error.message);
+  await logAudit({
+    companyId: session.companyId, userId: session.userId,
+    module: "settings", action: "policy_deleted", details: { policy_id: id },
+  });
+  revalidatePath("/settings");
+  return done("Policy deleted.");
+}
+
 // ============ DEMO SEED ============
 
 export async function seedDemoData(): Promise<ActionResult> {
@@ -652,6 +696,18 @@ export async function seedDemoData(): Promise<ActionResult> {
     { company_id: cid, employee_id: empIds["Juan Dela Cruz"], document_type: "certificate_of_employment", title: "COE — Juan Dela Cruz", status: "draft", generated_by_ai: true, content: "Demo seeded record. Ask Kawani AI: 'Generate a COE for Juan Dela Cruz.'", created_by: session.userId },
     { company_id: cid, document_type: "company_memo", title: "Memo — Attendance Policy", status: "approved", content: "Demo seeded record.", created_by: session.userId },
     { company_id: cid, employee_id: empIds["Maria Santos"], document_type: "onboarding_checklist", title: "Onboarding Checklist — Maria Santos", status: "draft", generated_by_ai: true, content: "Demo seeded record.", created_by: session.userId },
+  ]);
+
+  // demo policies — ground Kawani AI's policy answers
+  await admin.from("company_policies").insert([
+    {
+      company_id: cid, title: "Attendance and Tardiness Policy", category: "attendance", created_by: session.userId,
+      content: "Work hours are Monday to Saturday, 8:00 AM to 5:00 PM with a 1-hour unpaid lunch break. Employees must clock in via the timekeeping system. A grace period of 10 minutes applies; arrival after 8:10 AM is recorded as tardiness. Three (3) or more instances of tardiness within one payroll cutoff will result in a verbal reminder; five (5) or more will trigger a written Notice to Explain. Habitual tardiness (three consecutive cutoffs with 5+ instances) may result in progressive discipline. Undertime must be approved by the immediate supervisor in advance and is deducted from pay unless offset by approved leave credits.",
+    },
+    {
+      company_id: cid, title: "Leave Policy", category: "leave", created_by: session.userId,
+      content: "Regular employees earn 10 days of vacation leave and 10 days of sick leave per year, plus the 5-day Service Incentive Leave mandated by the Labor Code. Vacation leave must be filed at least 3 working days in advance and is subject to supervisor approval. Sick leave of 2 or more consecutive days requires a medical certificate. Unused vacation leave up to 5 days may be carried over to the next year; unused sick leave is convertible to cash at year-end at basic daily rate. Emergency leave is charged to vacation leave credits. Maternity, paternity, and solo parent leaves follow statutory rules (RA 11210, RA 8187, RA 8972).",
+    },
   ]);
 
   await logAudit({ companyId: cid, userId: session.userId, module: "settings", action: "demo_data_seeded" });

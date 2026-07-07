@@ -79,6 +79,10 @@ export async function POST(req: NextRequest) {
   if (fileContext) {
     systemPrompt += `\n\nThe user just uploaded a file. Context: ${JSON.stringify(fileContext).slice(0, 6000)}`;
   }
+  if (category === "company_policy_question") {
+    systemPrompt +=
+      "\n\nThis is a company policy question. Call search_company_policies first and answer ONLY from what it returns, quoting or paraphrasing the stored policy. If nothing is found, say the company has no written policy on this topic and suggest asking HR — do not invent policy content.";
+  }
   if (route.lane === "longform") {
     systemPrompt +=
       "\n\nThis request involves a disciplinary or legally sensitive document. Draft carefully: follow Philippine due-process requirements (e.g. the twin-notice rule), keep the tone factual and neutral, clearly label the output as a DRAFT, and explicitly recommend review by a qualified HR or legal professional.";
