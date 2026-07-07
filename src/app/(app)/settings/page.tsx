@@ -2,7 +2,7 @@ import { redirect } from "next/navigation";
 import { requireSession } from "@/lib/auth";
 import { createClient } from "@/lib/supabase/server";
 import { can } from "@/lib/rbac";
-import { updateCompany, addOrgItem, inviteUser, updateUserRole } from "@/lib/actions";
+import { updateCompany, addOrgItem, inviteUser, updateUserRole, linkUserToEmployee } from "@/lib/actions";
 import { ActionForm } from "@/components/action-form";
 import { PageHeader, Button, Input, Label, Select, Card, CardContent, CardHeader, CardTitle, Badge } from "@/components/ui";
 import { createAdminClient } from "@/lib/supabase/admin";
@@ -12,7 +12,7 @@ export default async function SettingsPage() {
   if (!can(session.role, "settings.manage")) redirect("/dashboard");
   const supabase = await createClient();
 
-  const [{ data: company }, { data: branches }, { data: departments }, { data: positions }, { data: holidays }, { data: users }, { data: templates }] = await Promise.all([
+  const [{ data: company }, { data: branches }, { data: departments }, { data: positions }, { data: holidays }, { data: users }, { data: templates }, { data: employees }] = await Promise.all([
     supabase.from("companies").select("*").eq("id", session.companyId).single(),
     supabase.from("branches").select("id, name, address").eq("company_id", session.companyId),
     supabase.from("departments").select("id, name").eq("company_id", session.companyId),
@@ -20,7 +20,9 @@ export default async function SettingsPage() {
     supabase.from("company_holidays").select("id, name, holiday_date, holiday_type").eq("company_id", session.companyId).order("holiday_date"),
     supabase.from("company_users").select("id, user_id, role, status").eq("company_id", session.companyId),
     supabase.from("document_templates").select("id, title, template_type, company_id").or(`company_id.eq.${session.companyId},company_id.is.null`),
+    supabase.from("employees").select("id, first_name, last_name, user_id").eq("company_id", session.companyId).order("last_name"),
   ]);
+  const employeeByUser = new Map((employees ?? []).filter((e) => e.user_id).map((e) => [e.user_id as string, e]));
 
   // emails for members (service role; page already owner/hr_admin gated)
   const admin = createAdminClient();
@@ -75,27 +77,47 @@ export default async function SettingsPage() {
         <Card>
           <CardHeader><CardTitle>Users & roles {isOwner ? "" : "(view only — Owner manages roles)"}</CardTitle></CardHeader>
           <CardContent className="space-y-3">
-            {(users ?? []).map((u) => (
-              <div key={u.id} className="flex items-center justify-between gap-2">
-                <div className="min-w-0">
-                  <p className="truncate text-sm text-gray-800">{emails.get(u.user_id) ?? u.user_id.slice(0, 8)}</p>
-                  <Badge status={u.status}>{u.status}</Badge>
+            {(users ?? []).map((u) => {
+              const linked = employeeByUser.get(u.user_id);
+              return (
+                <div key={u.id} className="border-b border-line pb-3 last:border-0 last:pb-0">
+                  <div className="flex items-center justify-between gap-2">
+                    <div className="min-w-0">
+                      <p className="truncate text-sm text-gray-800">{emails.get(u.user_id) ?? u.user_id.slice(0, 8)}</p>
+                      <Badge status={u.status}>{u.status}</Badge>
+                    </div>
+                    {isOwner ? (
+                      <ActionForm action={updateUserRole} className="flex items-center gap-1.5" resetOnSuccess={false}>
+                        <input type="hidden" name="id" value={u.id} />
+                        <Select name="role" defaultValue={u.role} className="w-32 text-xs">
+                          {["owner", "hr_admin", "manager", "accountant", "employee"].map((r) => (
+                            <option key={r} value={r}>{r.replace("_", " ")}</option>
+                          ))}
+                        </Select>
+                        <Button type="submit" size="sm" variant="outline">Set</Button>
+                      </ActionForm>
+                    ) : (
+                      <Badge>{u.role.replace("_", " ")}</Badge>
+                    )}
+                  </div>
+                  {isOwner && (
+                    <ActionForm action={linkUserToEmployee} className="mt-1.5 flex items-center gap-1.5" resetOnSuccess={false}>
+                      <input type="hidden" name="user_id" value={u.user_id} />
+                      <span className="text-xs text-gray-400">Employee record:</span>
+                      <Select name="employee_id" defaultValue={linked?.id ?? ""} className="w-44 text-xs">
+                        <option value="">Not linked</option>
+                        {(employees ?? []).map((e) => (
+                          <option key={e.id} value={e.id} disabled={!!e.user_id && e.user_id !== u.user_id}>
+                            {e.first_name} {e.last_name}{e.user_id && e.user_id !== u.user_id ? " (linked)" : ""}
+                          </option>
+                        ))}
+                      </Select>
+                      <Button type="submit" size="sm" variant="outline">Link</Button>
+                    </ActionForm>
+                  )}
                 </div>
-                {isOwner ? (
-                  <ActionForm action={updateUserRole} className="flex items-center gap-1.5" resetOnSuccess={false}>
-                    <input type="hidden" name="id" value={u.id} />
-                    <Select name="role" defaultValue={u.role} className="w-32 text-xs">
-                      {["owner", "hr_admin", "manager", "accountant", "employee"].map((r) => (
-                        <option key={r} value={r}>{r.replace("_", " ")}</option>
-                      ))}
-                    </Select>
-                    <Button type="submit" size="sm" variant="outline">Set</Button>
-                  </ActionForm>
-                ) : (
-                  <Badge>{u.role.replace("_", " ")}</Badge>
-                )}
-              </div>
-            ))}
+              );
+            })}
             {isOwner && (
               <ActionForm action={inviteUser} className="mt-4 flex items-end gap-2 border-t border-line pt-4">
                 <div className="flex-1"><Label>Invite by email</Label><Input name="email" type="email" required placeholder="teammate@company.ph" /></div>

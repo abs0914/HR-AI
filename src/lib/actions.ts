@@ -480,12 +480,50 @@ export async function inviteUser(fd: FormData): Promise<ActionResult> {
     { company_id: session.companyId, user_id: userId!, role, status: "active" },
     { onConflict: "company_id,user_id" });
   if (cuErr) return fail(cuErr.message);
+
+  // auto-link to an employee record with the same email (enables self-service:
+  // own profile, leave requests, own documents)
+  const { data: linked } = await admin.from("employees")
+    .update({ user_id: userId! })
+    .eq("company_id", session.companyId)
+    .ilike("email", email)
+    .is("user_id", null)
+    .select("id, first_name, last_name");
+
   await logAudit({
     companyId: session.companyId, userId: session.userId,
-    module: "settings", action: "user_invited", details: { email, role },
+    module: "settings", action: "user_invited",
+    details: { email, role, linked_employee: linked?.[0]?.id ?? null },
   });
   revalidatePath("/settings");
-  return done(`Invited ${email} as ${role.replace("_", " ")}.`);
+  const linkNote = linked?.length
+    ? ` Linked to employee record: ${linked[0].first_name} ${linked[0].last_name}.`
+    : " No employee record matched this email — link one manually in Settings if needed.";
+  return done(`Invited ${email} as ${role.replace("_", " ")}.${linkNote}`);
+}
+
+export async function linkUserToEmployee(fd: FormData): Promise<ActionResult> {
+  const session = await requireSession();
+  try { assertCan(session.role, "users.manage"); } catch (e: any) { return fail(e.message); }
+  const userId = str(fd, "user_id");
+  const employeeId = str(fd, "employee_id"); // empty = unlink
+  if (!userId) return fail("Missing user.");
+  const admin = createAdminClient();
+  // one login maps to at most one employee record — clear any previous link first
+  await admin.from("employees").update({ user_id: null })
+    .eq("company_id", session.companyId).eq("user_id", userId);
+  if (employeeId) {
+    const { error } = await admin.from("employees").update({ user_id: userId })
+      .eq("id", employeeId).eq("company_id", session.companyId);
+    if (error) return fail(error.message);
+  }
+  await logAudit({
+    companyId: session.companyId, userId: session.userId, employeeId,
+    module: "settings", action: employeeId ? "user_linked_to_employee" : "user_unlinked_from_employee",
+    details: { linked_user_id: userId },
+  });
+  revalidatePath("/settings");
+  return done(employeeId ? "Login linked to employee record." : "Login unlinked from employee record.");
 }
 
 export async function updateUserRole(fd: FormData): Promise<ActionResult> {
