@@ -5,6 +5,7 @@ import { approveDocument } from "@/lib/actions";
 import { ActionForm } from "@/components/action-form";
 import { PageHeader, Table, Th, Td, Badge, Button, EmptyState, Select } from "@/components/ui";
 import { UploadButton } from "@/components/upload-button";
+import { DocPreviewButton } from "@/components/doc-preview";
 import Link from "next/link";
 import { Bot } from "lucide-react";
 
@@ -75,6 +76,7 @@ export default async function DocumentsPage({ searchParams }: { searchParams: Pr
                 <Td>{new Date(d.created_at).toLocaleDateString("en-PH")}</Td>
                 <Td>
                   <span className="flex items-center gap-2 text-xs">
+                    <DocPreviewButton id={d.id} title={d.title} />
                     <a className="text-primary hover:underline" href={`/api/documents/${d.id}/download?fmt=docx`}>DOCX</a>
                     <a className="text-primary hover:underline" href={`/api/documents/${d.id}/download?fmt=pdf`}>PDF</a>
                     {canApprove && d.status === "draft" && (

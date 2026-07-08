@@ -3,6 +3,7 @@
 import { useEffect, useRef, useState } from "react";
 import { useSearchParams, useRouter } from "next/navigation";
 import { Button, Badge, Card, CardContent } from "@/components/ui";
+import { DocPreviewButton } from "@/components/doc-preview";
 import { toast } from "@/components/action-form";
 import { decideAiAction } from "@/lib/actions";
 import {
@@ -251,7 +252,7 @@ export function Console({ role, greetingName, initialApprovals, initialFiles, re
                       <div key={f.documentId} className="glass-card flex items-center justify-between gap-3 rounded-2xl px-3.5 py-2.5">
                         <span className="flex min-w-0 items-center gap-2 text-xs font-medium text-gray-700"><FileText size={15} className="shrink-0 text-teal-600" /> <span className="truncate">{f.title}</span></span>
                         <span className="flex shrink-0 gap-1">
-                          <a href={`/api/documents/${f.documentId}/download?fmt=docx`} className="neu-pressable rounded-lg bg-white/70 px-2 py-1 text-xs font-medium hover:bg-white">DOCX</a>
+                          <DocPreviewButton id={f.documentId} title={f.title} className="neu-pressable inline-flex items-center gap-1 rounded-lg bg-white/70 px-2 py-1 text-xs font-medium text-teal-700 hover:bg-white" />
                           <a href={`/api/documents/${f.documentId}/download?fmt=pdf`} className="neu-pressable rounded-lg bg-white/70 px-2 py-1 text-xs font-medium hover:bg-white">PDF</a>
                         </span>
                       </div>

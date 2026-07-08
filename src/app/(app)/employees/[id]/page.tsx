@@ -6,6 +6,7 @@ import { archiveEmployee } from "@/lib/actions";
 import { ActionForm } from "@/components/action-form";
 import { PageHeader, Badge, Card, CardContent, CardHeader, CardTitle, Table, Th, Td, Button, EmptyState } from "@/components/ui";
 import { EmployeeForm } from "@/components/employee-form";
+import { DocPreviewButton } from "@/components/doc-preview";
 import { logAudit } from "@/lib/audit";
 
 const REQUIRED_DOCS = ["employment_contract", "data_privacy_consent", "government_id"];
@@ -106,9 +107,11 @@ export default async function EmployeeDetailPage({ params }: { params: Promise<{
                     <Td>{d.title}{d.generated_by_ai && <span className="ml-1 text-xs text-primary">AI</span>}</Td>
                     <Td><Badge status={d.status}>{d.status}</Badge></Td>
                     <Td>
-                      <a className="text-primary hover:underline" href={`/api/documents/${d.id}/download?fmt=docx`}>DOCX</a>
-                      <span className="mx-1 text-gray-300">|</span>
-                      <a className="text-primary hover:underline" href={`/api/documents/${d.id}/download?fmt=pdf`}>PDF</a>
+                      <span className="flex items-center gap-2">
+                        <DocPreviewButton id={d.id} title={d.title} />
+                        <a className="text-primary hover:underline" href={`/api/documents/${d.id}/download?fmt=docx`}>DOCX</a>
+                        <a className="text-primary hover:underline" href={`/api/documents/${d.id}/download?fmt=pdf`}>PDF</a>
+                      </span>
                     </Td>
                   </tr>
                 ))}
