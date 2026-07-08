@@ -14,11 +14,11 @@ export default async function OnboardingPage() {
   if (existing) redirect("/dashboard");
 
   return (
-    <div className="flex min-h-screen items-center justify-center bg-muted-bg px-4 py-10">
+    <div className="flex min-h-[100dvh] items-center justify-center px-4 py-10">
       <Toaster />
-      <div className="w-full max-w-lg rounded-xl border border-line bg-white p-8 shadow-sm">
-        <div className="mb-6 flex items-center gap-2">
-          <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-primary text-white"><Bot size={20} /></div>
+      <div className="glass-card rise-in w-full max-w-lg rounded-[32px] p-8">
+        <div className="mb-6 flex items-center gap-3">
+          <span className="orb flex h-11 w-11 items-center justify-center"><Bot size={22} className="relative z-10 text-white drop-shadow" /></span>
           <div>
             <h1 className="text-lg font-bold">Set up your company</h1>
             <p className="text-sm text-gray-500">You will be the Owner of this workspace.</p>

@@ -54,7 +54,7 @@ export async function createCompany(fd: FormData): Promise<ActionResult> {
   if (cuErr) return fail(cuErr.message);
 
   await logAudit({ companyId: company.id, userId: user.id, module: "settings", action: "company_created", details: { name: parsed.data.name } });
-  redirect("/dashboard");
+  redirect("/console");
 }
 
 // ============ EMPLOYEES ============

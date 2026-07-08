@@ -26,9 +26,16 @@ export default async function ConsolePage() {
     .order("created_at", { ascending: false })
     .limit(6);
 
+  // friendly greeting name: linked employee first name, else email local part
+  const { data: me } = await supabase
+    .from("employees").select("first_name")
+    .eq("user_id", session.userId).eq("company_id", session.companyId).maybeSingle();
+  const greetingName = me?.first_name || session.email.split("@")[0].replace(/[._]/g, " ").split(" ")[0];
+
   return (
     <Console
       role={session.role}
+      greetingName={greetingName.charAt(0).toUpperCase() + greetingName.slice(1)}
       initialApprovals={approvals ?? []}
       initialFiles={recentFiles ?? []}
       recentAudit={recentAudit ?? []}

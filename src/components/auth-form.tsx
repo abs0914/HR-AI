@@ -23,7 +23,7 @@ export function AuthForm({ mode }: { mode: "login" | "signup" | "forgot" }) {
       if (mode === "login") {
         const { error } = await supabase.auth.signInWithPassword({ email, password });
         if (error) throw error;
-        router.push("/dashboard");
+        router.push("/console");
         router.refresh();
       } else if (mode === "signup") {
         const { error } = await supabase.auth.signUp({ email, password });
@@ -49,15 +49,17 @@ export function AuthForm({ mode }: { mode: "login" | "signup" | "forgot" }) {
   const titles = { login: "Log in to HR AI", signup: "Create your HR AI account", forgot: "Reset your password" };
 
   return (
-    <div className="flex min-h-screen items-center justify-center bg-muted-bg px-4">
-      <div className="w-full max-w-sm rounded-xl border border-line bg-white p-8 shadow-sm">
-        <Link href="/" className="mb-6 flex items-center justify-center gap-2">
-          <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-primary text-white"><Bot size={20} /></div>
+    <div className="flex min-h-[100dvh] items-center justify-center px-4">
+      <div className="glass-card rise-in w-full max-w-sm rounded-[32px] p-8">
+        <Link href="/" className="mb-6 flex flex-col items-center gap-3">
+          <span className="orb flex h-16 w-16 items-center justify-center">
+            <Bot size={30} className="relative z-10 text-white drop-shadow-lg" />
+          </span>
           <span className="text-lg font-bold">HR AI</span>
         </Link>
         <h1 className="mb-6 text-center text-lg font-semibold text-gray-900">{titles[mode]}</h1>
-        {error && <p className="mb-4 rounded-lg bg-red-50 px-3 py-2 text-sm text-red-700">{error}</p>}
-        {notice && <p className="mb-4 rounded-lg bg-emerald-50 px-3 py-2 text-sm text-emerald-700">{notice}</p>}
+        {error && <p className="mb-4 rounded-xl bg-red-50/80 px-3 py-2 text-sm text-red-700">{error}</p>}
+        {notice && <p className="mb-4 rounded-xl bg-emerald-50/80 px-3 py-2 text-sm text-emerald-700">{notice}</p>}
         <form onSubmit={submit} className="space-y-4">
           <div>
             <Label htmlFor="email">Email</Label>

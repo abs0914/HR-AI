@@ -3,12 +3,132 @@
 @theme {
   --color-primary: #0f766e;
   --color-primary-dark: #115e59;
+  --color-primary-soft: #5eead4;
   --color-accent: #ffc107;
-  --color-ink: #111827;
-  --color-muted-bg: #f9fafb;
-  --color-line: #e5e7eb;
+  --color-ink: #0f1729;
+  --color-muted-bg: #eef3f3;
+  --color-line: #e2e8f0;
+}
+
+/* ---------- calm gradient canvas ---------- */
+html {
+  scroll-behavior: smooth;
 }
 
 body {
-  @apply bg-white text-[#111827] antialiased;
+  @apply text-[#0f1729] antialiased;
+  min-height: 100dvh;
+  background:
+    radial-gradient(1100px 700px at 12% -8%, rgba(94, 234, 212, 0.28), transparent 60%),
+    radial-gradient(1000px 640px at 100% 4%, rgba(129, 140, 248, 0.22), transparent 58%),
+    radial-gradient(900px 620px at 50% 108%, rgba(255, 193, 7, 0.12), transparent 60%),
+    linear-gradient(180deg, #f3f7f7 0%, #eef2f8 48%, #f4f0fb 100%);
+  background-attachment: fixed;
+}
+
+/* ---------- liquid glass materials ---------- */
+@layer utilities {
+  .glass {
+    background: rgba(255, 255, 255, 0.55);
+    backdrop-filter: blur(20px) saturate(150%);
+    -webkit-backdrop-filter: blur(20px) saturate(150%);
+    border: 1px solid rgba(255, 255, 255, 0.65);
+  }
+  .glass-strong {
+    background: rgba(255, 255, 255, 0.78);
+    backdrop-filter: blur(24px) saturate(160%);
+    -webkit-backdrop-filter: blur(24px) saturate(160%);
+    border: 1px solid rgba(255, 255, 255, 0.7);
+  }
+  /* frosted card with a soft top highlight + neumorphic shadow */
+  .glass-card {
+    background: linear-gradient(160deg, rgba(255, 255, 255, 0.72), rgba(255, 255, 255, 0.48));
+    backdrop-filter: blur(18px) saturate(150%);
+    -webkit-backdrop-filter: blur(18px) saturate(150%);
+    border: 1px solid rgba(255, 255, 255, 0.6);
+    box-shadow: 0 1px 0 rgba(255, 255, 255, 0.6) inset, 0 10px 30px -12px rgba(15, 23, 42, 0.18);
+  }
+  .neu-pressable {
+    transition: transform 0.18s cubic-bezier(0.22, 1, 0.36, 1), box-shadow 0.18s ease, background 0.18s ease;
+  }
+  .neu-pressable:active {
+    transform: scale(0.96);
+  }
+  .lift {
+    transition: transform 0.22s cubic-bezier(0.22, 1, 0.36, 1), box-shadow 0.22s ease;
+  }
+  .lift:hover {
+    transform: translateY(-2px);
+  }
+  .hide-scrollbar::-webkit-scrollbar {
+    display: none;
+  }
+  .hide-scrollbar {
+    scrollbar-width: none;
+  }
+  .pb-safe {
+    padding-bottom: env(safe-area-inset-bottom, 0px);
+  }
+}
+
+/* ---------- iridescent AI orb ---------- */
+.orb {
+  position: relative;
+  border-radius: 9999px;
+  background:
+    radial-gradient(circle at 32% 28%, rgba(255, 255, 255, 0.95), transparent 38%),
+    conic-gradient(from 200deg at 50% 50%, #5eead4, #38bdf8, #818cf8, #c084fc, #fbbf24, #5eead4);
+  box-shadow: 0 12px 40px -8px rgba(94, 234, 212, 0.5), 0 4px 14px -4px rgba(129, 140, 248, 0.45),
+    inset 0 0 22px rgba(255, 255, 255, 0.35);
+  animation: orb-float 6s ease-in-out infinite, orb-spin 18s linear infinite;
+}
+.orb::after {
+  content: "";
+  position: absolute;
+  inset: 14%;
+  border-radius: 9999px;
+  background: radial-gradient(circle at 60% 65%, rgba(255, 255, 255, 0.55), transparent 55%);
+  mix-blend-mode: screen;
+}
+
+@keyframes orb-float {
+  0%, 100% { transform: translateY(0) scale(1); }
+  50% { transform: translateY(-8px) scale(1.02); }
+}
+@keyframes orb-spin {
+  to { transform: rotate(360deg); }
+}
+/* orb-float wins on translate; keep spin on the gradient layer only */
+.orb-spin-layer {
+  animation: orb-spin 16s linear infinite;
+}
+
+/* ---------- micro-interactions ---------- */
+@keyframes msg-in {
+  from { opacity: 0; transform: translateY(10px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+.msg-in {
+  animation: msg-in 0.32s cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+
+@keyframes rise-in {
+  from { opacity: 0; transform: translateY(14px) scale(0.98); }
+  to { opacity: 1; transform: translateY(0) scale(1); }
+}
+.rise-in {
+  animation: rise-in 0.45s cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+
+@keyframes pulse-ring {
+  0% { box-shadow: 0 0 0 0 rgba(94, 234, 212, 0.5); }
+  70% { box-shadow: 0 0 0 14px rgba(94, 234, 212, 0); }
+  100% { box-shadow: 0 0 0 0 rgba(94, 234, 212, 0); }
+}
+.pulse-ring {
+  animation: pulse-ring 1.6s ease-out infinite;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .orb, .orb-spin-layer, .msg-in, .rise-in, .pulse-ring { animation: none !important; }
 }
