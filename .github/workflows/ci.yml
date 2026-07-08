@@ -24,6 +24,7 @@ jobs:
           node --experimental-strip-types scripts/check-template.mjs
           node --experimental-strip-types scripts/check-rate-limit.mjs
           node --experimental-strip-types scripts/check-billing.mjs
+          node --experimental-strip-types scripts/check-finalpay.mjs
       - name: Type check
         run: npx tsc --noEmit
       - name: Build

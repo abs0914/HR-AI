@@ -296,6 +296,188 @@ export async function approvePayrollPeriod(fd: FormData): Promise<ActionResult> 
   return done("Payroll period approved. You can now export it.");
 }
 
+// ============ FINAL PAY (last pay) ============
+
+export async function createFinalPay(fd: FormData): Promise<ActionResult> {
+  const session = await requireSession();
+  try { assertCan(session.role, "payroll.write"); } catch (e: any) { return fail(e.message); }
+  const employee_id = str(fd, "employee_id");
+  const separation_date = str(fd, "separation_date");
+  if (!employee_id || !separation_date) return fail("Employee and separation date are required.");
+  const supabase = await createClient();
+
+  const { data: emp } = await supabase.from("employees")
+    .select("id, first_name, last_name, salary_type, salary_amount, hire_date, employment_status")
+    .eq("id", employee_id).eq("company_id", session.companyId).maybeSingle();
+  if (!emp) return fail("Employee not found.");
+
+  const { computeFinalPay } = await import("@/lib/finalpay");
+  const c = computeFinalPay({
+    salaryType: emp.salary_type, salaryAmount: Number(emp.salary_amount ?? 0),
+    daysWorked: Number(str(fd, "days_worked") ?? 0),
+    unusedLeaveDays: Number(str(fd, "unused_leave_days") ?? 0),
+    hireDate: emp.hire_date, separationDate: separation_date,
+    allowances: Number(str(fd, "allowances") ?? 0),
+    deductions: Number(str(fd, "deductions") ?? 0),
+    cashAdvances: Number(str(fd, "cash_advances") ?? 0),
+    otherLiabilities: Number(str(fd, "other_liabilities") ?? 0),
+  });
+
+  const { error } = await supabase.from("final_pay").insert({
+    company_id: session.companyId, employee_id, separation_date,
+    reason: str(fd, "reason") ?? "resignation",
+    days_worked: Number(str(fd, "days_worked") ?? 0),
+    unused_leave_days: Number(str(fd, "unused_leave_days") ?? 0),
+    last_salary: c.lastSalary, pro_rated_13th: c.proRated13th, leave_conversion: c.leaveConversion,
+    allowances: c.allowances, deductions: c.deductions, cash_advances: c.cashAdvances,
+    other_liabilities: c.otherLiabilities, net_final_pay: c.net,
+    notes: str(fd, "notes"), status: "draft", created_by: session.userId,
+  });
+  if (error) return fail(error.message);
+  await logAudit({
+    companyId: session.companyId, userId: session.userId, employeeId: employee_id,
+    module: "payroll", action: "final_pay_created", details: { separation_date, net: c.net },
+  });
+  revalidatePath("/final-pay");
+  return done(`Final pay computed for ${emp.first_name} ${emp.last_name}: net ${c.net.toLocaleString("en-PH")}. Review, then approve.`);
+}
+
+// Editable component amounts; net recomputes from the components (draft only).
+export async function updateFinalPay(fd: FormData): Promise<ActionResult> {
+  const session = await requireSession();
+  try { assertCan(session.role, "payroll.write"); } catch (e: any) { return fail(e.message); }
+  const id = str(fd, "id");
+  if (!id) return fail("Missing final pay id.");
+  const num = (k: string) => Number(str(fd, k) ?? 0) || 0;
+  const last_salary = num("last_salary"), pro_rated_13th = num("pro_rated_13th"),
+    leave_conversion = num("leave_conversion"), allowances = num("allowances"),
+    deductions = num("deductions"), cash_advances = num("cash_advances"), other_liabilities = num("other_liabilities");
+  const net_final_pay = Math.round(
+    (last_salary + pro_rated_13th + leave_conversion + allowances - deductions - cash_advances - other_liabilities) * 100
+  ) / 100;
+  const supabase = await createClient();
+  const { error } = await supabase.from("final_pay").update({
+    last_salary, pro_rated_13th, leave_conversion, allowances, deductions, cash_advances, other_liabilities,
+    net_final_pay, notes: str(fd, "notes"), updated_at: new Date().toISOString(),
+  }).eq("id", id).eq("company_id", session.companyId).eq("status", "draft");
+  if (error) return fail(error.message);
+  revalidatePath("/final-pay");
+  return done(`Final pay updated. Net: ${net_final_pay.toLocaleString("en-PH")}.`);
+}
+
+export async function approveFinalPay(fd: FormData): Promise<ActionResult> {
+  const session = await requireSession();
+  if (!["owner", "hr_admin"].includes(session.role)) return fail("Only Owner or HR Admin can approve final pay.");
+  const id = str(fd, "id");
+  if (!id) return fail("Missing final pay id.");
+  const supabase = await createClient();
+  const { error } = await supabase.from("final_pay").update({
+    status: "approved", approved_by: session.userId, approved_at: new Date().toISOString(),
+  }).eq("id", id).eq("company_id", session.companyId).eq("status", "draft");
+  if (error) return fail(error.message);
+  await logAudit({ companyId: session.companyId, userId: session.userId, module: "payroll", action: "final_pay_approved", details: { final_pay_id: id } });
+  revalidatePath("/final-pay");
+  return done("Final pay approved. You can now generate the computation document and mark it released.");
+}
+
+export async function markFinalPayReleased(fd: FormData): Promise<ActionResult> {
+  const session = await requireSession();
+  if (!["owner", "hr_admin"].includes(session.role)) return fail("Only Owner or HR Admin can mark final pay released.");
+  const id = str(fd, "id");
+  if (!id) return fail("Missing final pay id.");
+  const supabase = await createClient();
+  const { error } = await supabase.from("final_pay").update({
+    status: "released", released_at: new Date().toISOString(),
+  }).eq("id", id).eq("company_id", session.companyId).eq("status", "approved");
+  if (error) return fail(error.message);
+  await logAudit({ companyId: session.companyId, userId: session.userId, module: "payroll", action: "final_pay_released", details: { final_pay_id: id } });
+  revalidatePath("/final-pay");
+  return done("Final pay marked as released.");
+}
+
+// Generate the Final Pay Computation document (DOCX + PDF) into Documents.
+export async function generateFinalPayDocument(fd: FormData): Promise<ActionResult> {
+  const session = await requireSession();
+  if (!["owner", "hr_admin"].includes(session.role)) return fail("Only Owner or HR Admin can generate final pay documents.");
+  const id = str(fd, "id");
+  if (!id) return fail("Missing final pay id.");
+  const admin = createAdminClient();
+  const { data: fp } = await admin.from("final_pay")
+    .select("*, employees(first_name, last_name, employee_number, hire_date)")
+    .eq("id", id).eq("company_id", session.companyId).maybeSingle();
+  if (!fp) return fail("Final pay record not found.");
+  const { data: company } = await admin.from("companies").select("name, address").eq("id", session.companyId).single();
+
+  const { textToDocx, textToPdf, saveToStorage } = await import("@/lib/docgen");
+  const { php } = await import("@/lib/finalpay");
+  const emp: any = fp.employees;
+  const empName = `${emp?.first_name} ${emp?.last_name}`;
+  const title = `Final Pay Computation — ${empName}`;
+  const today = new Date().toLocaleDateString("en-PH", { timeZone: "Asia/Manila", year: "numeric", month: "long", day: "numeric" });
+  const body = [
+    "FINAL PAY COMPUTATION",
+    "",
+    `${company?.name ?? ""}`,
+    `${company?.address ?? ""}`,
+    "",
+    `Employee: ${empName}${emp?.employee_number ? ` (${emp.employee_number})` : ""}`,
+    `Date of separation: ${fp.separation_date}`,
+    `Reason: ${String(fp.reason ?? "").replace(/_/g, " ")}`,
+    `Prepared: ${today}`,
+    "",
+    "EARNINGS",
+    `  Unpaid last salary (${fp.days_worked} day/s)        ${php(fp.last_salary)}`,
+    `  Pro-rated 13th month pay                           ${php(fp.pro_rated_13th)}`,
+    `  Unused leave conversion (${fp.unused_leave_days} day/s)  ${php(fp.leave_conversion)}`,
+    `  Allowances / other earnings                        ${php(fp.allowances)}`,
+    `  ----------------------------------------------`,
+    `  GROSS FINAL PAY                                    ${php(Number(fp.last_salary) + Number(fp.pro_rated_13th) + Number(fp.leave_conversion) + Number(fp.allowances))}`,
+    "",
+    "LESS: DEDUCTIONS",
+    `  Deductions                                         ${php(fp.deductions)}`,
+    `  Cash advances                                      ${php(fp.cash_advances)}`,
+    `  Other liabilities / accountabilities               ${php(fp.other_liabilities)}`,
+    `  ----------------------------------------------`,
+    `  TOTAL DEDUCTIONS                                   ${php(Number(fp.deductions) + Number(fp.cash_advances) + Number(fp.other_liabilities))}`,
+    "",
+    `NET FINAL PAY                                        ${php(fp.net_final_pay)}`,
+    "",
+    fp.notes ? `Notes: ${fp.notes}` : "",
+    "",
+    "DRAFT — This computation is an estimate for HR preparation and must be reviewed by",
+    "qualified HR/accounting before release. Statutory final withholding (BIR, SSS,",
+    "PhilHealth, Pag-IBIG) and tax on any taxable component are not modelled here.",
+    "Final pay should be released within 30 days of separation (DOLE Labor Advisory 06-20),",
+    "together with the Certificate of Employment.",
+    "",
+    "Prepared by: __________________________   Received by: __________________________",
+    `                 (HR / Accounting)                       ${empName}`,
+  ].filter((l) => l !== undefined).join("\n");
+
+  const [docx, pdf] = await Promise.all([textToDocx(title, body), textToPdf(title, body)]);
+  const path = await saveToStorage({
+    companyId: session.companyId, employeeId: fp.employee_id, documentType: "final_pay_computation",
+    filename: title, buffer: docx, ext: "docx",
+  });
+  await saveToStorage({
+    companyId: session.companyId, employeeId: fp.employee_id, documentType: "final_pay_computation",
+    filename: title, buffer: pdf, ext: "pdf",
+  });
+  const { data: doc, error } = await admin.from("employee_documents").insert({
+    company_id: session.companyId, employee_id: fp.employee_id, document_type: "final_pay_computation",
+    title, file_url: path, file_type: "docx", content: body, status: "approved",
+    generated_by_ai: false, created_by: session.userId, approved_by: session.userId, approved_at: new Date().toISOString(),
+  }).select("id").single();
+  if (error) return fail(error.message);
+  await logAudit({
+    companyId: session.companyId, userId: session.userId, employeeId: fp.employee_id,
+    module: "documents", action: "final_pay_document_generated", details: { final_pay_id: id, document_id: doc.id },
+  });
+  revalidatePath("/final-pay");
+  revalidatePath("/documents");
+  return done("Final Pay Computation saved to Documents (DOCX + PDF).");
+}
+
 // ============ AI APPROVALS ============
 
 export async function decideAiAction(fd: FormData): Promise<ActionResult> {

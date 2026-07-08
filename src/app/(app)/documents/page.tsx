@@ -12,8 +12,8 @@ const DOC_TYPES = [
   "employment_contract", "job_offer", "certificate_of_employment", "notice_to_explain",
   "written_warning", "company_memo", "data_privacy_consent", "policy_acknowledgment",
   "clearance_form", "onboarding_checklist", "performance_evaluation", "resignation_acceptance",
-  "employee_handbook", "payroll_report", "attendance_report", "resume", "government_id",
-  "medical_certificate", "other",
+  "employee_handbook", "payroll_report", "attendance_report", "final_pay_computation", "quitclaim",
+  "resume", "government_id", "medical_certificate", "other",
 ];
 
 export default async function DocumentsPage({ searchParams }: { searchParams: Promise<{ type?: string; status?: string }> }) {

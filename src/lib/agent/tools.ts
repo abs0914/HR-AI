@@ -800,6 +800,81 @@ export const TOOLS: ToolDef[] = [
       return { ok: true, message: `${data?.length ?? 0} pending approval(s). They can be approved on the Approvals page.`, data };
     },
   },
+  {
+    name: "compute_final_pay",
+    description: "Compute a DRAFT final pay (last pay) for a separated employee: unpaid last salary, pro-rated 13th month, unused leave conversion, minus deductions/cash advances/liabilities. Creates a draft on the Final Pay page that requires human approval before release. Ask the user for separation_date; days_worked and unused_leave_days default to 0 if unknown.",
+    parameters: {
+      type: "object",
+      properties: {
+        employee: { type: "string", description: "employee name or id" },
+        separation_date: { type: "string", description: "YYYY-MM-DD" },
+        reason: { type: "string", enum: ["resignation", "end_of_contract", "termination", "retirement", "redundancy", "closure", "other"] },
+        days_worked: { type: "number", description: "unpaid days worked in the final cutoff" },
+        unused_leave_days: { type: "number", description: "convertible leave credits (days)" },
+        cash_advances: { type: "number" },
+        deductions: { type: "number" },
+      },
+      required: ["employee", "separation_date"],
+    },
+    permission: "payroll.write",
+    execute: async ({ employee, separation_date, reason, days_worked, unused_leave_days, cash_advances, deductions }, tc) => {
+      const found = await findEmployee(tc, employee);
+      if (!found) return { ok: false, message: `No employee found matching "${employee}".` };
+      if (found.ambiguous) return { ok: false, message: "Multiple employees match — ask the user which one.", data: found.ambiguous };
+      const admin0 = createAdminClient();
+      // salary may be masked for accountants in the user-scoped read — fetch via admin (payroll-authorized)
+      const { data: emp } = await admin0.from("employees")
+        .select("id, first_name, last_name, salary_type, salary_amount, hire_date")
+        .eq("id", found.id).eq("company_id", tc.session.companyId).single();
+      if (!emp) return { ok: false, message: "Employee not found." };
+      if (emp.salary_amount == null)
+        return { ok: false, message: `No salary on file for ${emp.first_name} ${emp.last_name}. Final pay needs a salary — ask HR to set it first.` };
+      const { computeFinalPay } = await import("@/lib/finalpay");
+      const c = computeFinalPay({
+        salaryType: emp.salary_type, salaryAmount: Number(emp.salary_amount),
+        daysWorked: Number(days_worked ?? 0), unusedLeaveDays: Number(unused_leave_days ?? 0),
+        hireDate: emp.hire_date, separationDate: separation_date,
+        cashAdvances: Number(cash_advances ?? 0), deductions: Number(deductions ?? 0),
+      });
+      const admin = createAdminClient();
+      const { error } = await admin.from("final_pay").insert({
+        company_id: tc.session.companyId, employee_id: emp.id, separation_date,
+        reason: reason ?? "resignation", days_worked: Number(days_worked ?? 0),
+        unused_leave_days: Number(unused_leave_days ?? 0),
+        last_salary: c.lastSalary, pro_rated_13th: c.proRated13th, leave_conversion: c.leaveConversion,
+        allowances: c.allowances, deductions: c.deductions, cash_advances: c.cashAdvances,
+        other_liabilities: c.otherLiabilities, net_final_pay: c.net, status: "draft", created_by: tc.session.userId,
+      });
+      if (error) return { ok: false, message: error.message };
+      await logAudit({
+        companyId: tc.session.companyId, userId: tc.session.userId, employeeId: emp.id,
+        module: "payroll", action: "ai_final_pay_draft", details: { separation_date, net: c.net },
+      });
+      return {
+        ok: true,
+        message: `Draft final pay for ${emp.first_name} ${emp.last_name} (separated ${separation_date}): last salary ₱${c.lastSalary.toLocaleString("en-PH")}, pro-rated 13th month ₱${c.proRated13th.toLocaleString("en-PH")}, leave conversion ₱${c.leaveConversion.toLocaleString("en-PH")}, less deductions ₱${c.totalDeductions.toLocaleString("en-PH")} → NET ₱${c.net.toLocaleString("en-PH")}. It's a DRAFT on the Final Pay page and needs Owner/HR Admin approval before release. Estimate excludes statutory final withholding.`,
+        data: c,
+      };
+    },
+  },
+  {
+    name: "list_final_pay",
+    description: "List final pay (last pay) records and their status.",
+    parameters: { type: "object", properties: { status: { type: "string", enum: ["draft", "approved", "released", "exported"] } } },
+    permission: "payroll.read",
+    execute: async ({ status }, tc) => {
+      let q = tc.supabase.from("final_pay")
+        .select("id, separation_date, reason, net_final_pay, status, employees(first_name, last_name)")
+        .eq("company_id", tc.session.companyId);
+      if (status) q = q.eq("status", status);
+      const { data } = await q.order("created_at", { ascending: false }).limit(25);
+      const rows = (data ?? []).map((r: any) => ({
+        employee: `${r.employees?.first_name} ${r.employees?.last_name}`,
+        separation_date: r.separation_date, reason: r.reason, net_final_pay: r.net_final_pay, status: r.status,
+      }));
+      return { ok: true, message: `${rows.length} final pay record(s).`, data: rows };
+    },
+  },
 ];
 
 // Read/query tools — the "front desk" (Groq) set. Fewer + simpler schemas keep
@@ -808,6 +883,7 @@ export const READ_TOOL_NAMES = [
   "search_employee", "get_employee_profile", "list_missing_documents", "list_regularization_due",
   "summarize_attendance", "list_late_employees", "get_leave_balance", "list_pending_leaves",
   "search_company_policies", "list_compliance_reminders", "list_pending_approvals", "list_applicants",
+  "list_final_pay",
   "create_leave_request", // employees file leave conversationally — safe, always ends pending
 ];
 

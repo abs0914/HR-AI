@@ -7,7 +7,7 @@ import { createClient } from "@/lib/supabase/client";
 import type { Role } from "@/lib/auth";
 import {
   LayoutDashboard, Bot, Users, Clock, CalendarDays, Calculator, FolderOpen,
-  UserSearch, BellRing, CheckSquare, ScrollText, Settings, LogOut, Grid3x3, X,
+  UserSearch, BellRing, CheckSquare, ScrollText, Settings, LogOut, Grid3x3, X, Wallet,
 } from "lucide-react";
 
 type NavItem = { href: string; label: string; icon: any; roles?: Role[] };
@@ -19,6 +19,7 @@ const NAV: NavItem[] = [
   { href: "/attendance", label: "Attendance", icon: Clock },
   { href: "/leave", label: "Leave", icon: CalendarDays },
   { href: "/payroll", label: "Payroll Prep", icon: Calculator, roles: ["owner", "hr_admin", "accountant"] },
+  { href: "/final-pay", label: "Final Pay", icon: Wallet, roles: ["owner", "hr_admin", "accountant"] },
   { href: "/documents", label: "Documents", icon: FolderOpen },
   { href: "/recruitment", label: "Recruitment", icon: UserSearch, roles: ["owner", "hr_admin"] },
   { href: "/compliance", label: "Compliance", icon: BellRing, roles: ["owner", "hr_admin", "manager", "accountant"] },
