@@ -6,8 +6,8 @@ import crypto from "crypto";
 // switch to real subscriptions when renewal churn becomes a problem.
 
 export const PLAN_PRICES: Record<string, { amountCentavos: number; label: string }> = {
-  premium: { amountCentavos: 1_499_00, label: "HR AI Premium — 30 days" },
-  enterprise: { amountCentavos: 6_999_00, label: "HR AI Enterprise — 30 days" },
+  premium: { amountCentavos: 1_499_00, label: "Kawani AI Premium — 30 days" },
+  enterprise: { amountCentavos: 6_999_00, label: "Kawani AI Enterprise — 30 days" },
 };
 
 export const hasPayMongo = () => !!process.env.PAYMONGO_SECRET_KEY;

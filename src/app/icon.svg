@@ -1,0 +1,29 @@
+<svg viewBox="0 0 100 100" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <linearGradient id="kw-teal" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#2dd4bf" />
+      <stop offset="55%" stop-color="#14a394" />
+      <stop offset="100%" stop-color="#0f766e" />
+    </linearGradient>
+  </defs>
+  <circle cx="46" cy="52" r="38" fill="none" stroke="url(#kw-teal)" stroke-width="9" stroke-linecap="round" pathLength="100" stroke-dasharray="86 14" stroke-dashoffset="6" />
+  <path d="M 20 82 L 8 96 L 32 90 Z" fill="#0f766e" />
+  <g stroke="#14a394" stroke-width="3.2" stroke-linecap="round" fill="#ffffff">
+    <line x1="68" y1="18" x2="80" y2="8" />
+    <circle cx="83" cy="6.5" r="4" />
+    <line x1="75" y1="25" x2="89" y2="15" />
+    <circle cx="92" cy="13" r="4" />
+    <line x1="80" y1="33" x2="93" y2="26" />
+    <circle cx="96" cy="24.5" r="4" />
+  </g>
+  <g fill="#0e2a47">
+    <circle cx="27" cy="42" r="7.5" />
+    <rect x="16.5" y="51" width="21" height="16" rx="9" />
+    <circle cx="65" cy="42" r="7.5" />
+    <rect x="54.5" y="51" width="21" height="16" rx="9" />
+    <circle cx="46" cy="35" r="10.5" />
+    <rect x="31.5" y="47" width="29" height="22" rx="12" />
+  </g>
+  <circle cx="60" cy="74" r="13.5" fill="#ffffff" />
+  <path d="M 52.5 74 L 58.5 80.5 L 69.5 66" fill="none" stroke="#d29b12" stroke-width="5.5" stroke-linecap="round" stroke-linejoin="round" />
+</svg>

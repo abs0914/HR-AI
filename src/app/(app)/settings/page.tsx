@@ -257,7 +257,7 @@ export default async function SettingsPage() {
               ))}
             </div>
             <p className="mt-3 text-xs text-gray-400">
-              Global defaults ship with HR AI. Kawani AI uses your company template when one exists for the same type.
+              Global defaults ship with Kawani AI. The agent uses your company template when one exists for the same type.
             </p>
           </CardContent>
         </Card>

@@ -3,18 +3,14 @@ import { requireSession } from "@/lib/auth";
 import { createClient } from "@/lib/supabase/server";
 import { Toaster } from "@/components/action-form";
 import { SidebarNav, BottomNav, LogoutButton } from "@/components/sidebar";
-import { Bot } from "lucide-react";
+import { KawaniMark } from "@/components/logo";
 
 export default async function AppLayout({ children }: { children: React.ReactNode }) {
   const session = await requireSession();
   const supabase = await createClient();
   const { data: company } = await supabase.from("companies").select("name").eq("id", session.companyId).single();
 
-  const logo = (
-    <span className="orb flex h-9 w-9 items-center justify-center">
-      <Bot size={18} className="relative z-10 text-white drop-shadow" />
-    </span>
-  );
+  const logo = <KawaniMark size={38} />;
 
   return (
     <div className="min-h-[100dvh]">
@@ -23,7 +19,7 @@ export default async function AppLayout({ children }: { children: React.ReactNod
         <Link href="/console" className="flex items-center gap-2.5 px-5 py-5">
           {logo}
           <div className="min-w-0">
-            <p className="text-base font-bold leading-tight">HR AI</p>
+            <p className="text-base font-bold leading-tight"><span className="text-[#0e2a47]">Kawani</span> <span className="text-teal-600">AI</span></p>
             <p className="truncate text-xs text-gray-500">{company?.name}</p>
           </div>
         </Link>
@@ -39,7 +35,7 @@ export default async function AppLayout({ children }: { children: React.ReactNod
         <Link href="/console" className="flex items-center gap-2.5">
           {logo}
           <div className="min-w-0 leading-tight">
-            <p className="text-sm font-bold">HR AI</p>
+            <p className="text-sm font-bold"><span className="text-[#0e2a47]">Kawani</span> <span className="text-teal-600">AI</span></p>
             <p className="truncate text-[11px] text-gray-500">{company?.name}</p>
           </div>
         </Link>

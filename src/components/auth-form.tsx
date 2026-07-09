@@ -5,7 +5,7 @@ import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { createClient } from "@/lib/supabase/client";
 import { Button, Input, Label } from "@/components/ui";
-import { Bot } from "lucide-react";
+import { KawaniMark } from "@/components/logo";
 
 export function AuthForm({ mode }: { mode: "login" | "signup" | "forgot" }) {
   const router = useRouter();
@@ -46,16 +46,14 @@ export function AuthForm({ mode }: { mode: "login" | "signup" | "forgot" }) {
     }
   }
 
-  const titles = { login: "Log in to HR AI", signup: "Create your HR AI account", forgot: "Reset your password" };
+  const titles = { login: "Log in to Kawani AI", signup: "Create your Kawani AI account", forgot: "Reset your password" };
 
   return (
     <div className="flex min-h-[100dvh] items-center justify-center px-4">
       <div className="glass-card rise-in w-full max-w-sm rounded-[32px] p-8">
         <Link href="/" className="mb-6 flex flex-col items-center gap-3">
-          <span className="orb flex h-16 w-16 items-center justify-center">
-            <Bot size={30} className="relative z-10 text-white drop-shadow-lg" />
-          </span>
-          <span className="text-lg font-bold">HR AI</span>
+          <KawaniMark size={64} />
+          <span className="text-lg font-bold"><span className="text-[#0e2a47]">Kawani</span> <span className="text-teal-600">AI</span></span>
         </Link>
         <h1 className="mb-6 text-center text-lg font-semibold text-gray-900">{titles[mode]}</h1>
         {error && <p className="mb-4 rounded-xl bg-red-50/80 px-3 py-2 text-sm text-red-700">{error}</p>}
