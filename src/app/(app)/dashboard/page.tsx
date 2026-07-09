@@ -64,11 +64,11 @@ export default async function DashboardPage() {
         <Card className="mb-4 rise-in">
           <CardContent className="flex flex-wrap items-center justify-between gap-3 py-4">
             <div>
-              <p className="text-sm font-semibold text-gray-900">New workspace — load demo data?</p>
-              <p className="text-xs text-gray-600">Adds 5 demo employees, attendance, leave requests, reminders, and documents so you can try Kawani AI right away.</p>
+              <p className="text-sm font-semibold text-gray-900">New workspace — load sample data?</p>
+              <p className="text-xs text-gray-600">Adds 5 sample employees, attendance, leave requests, reminders, and documents so you can try Kawani AI right away.</p>
             </div>
             <ActionForm action={seedDemoData}>
-              <Button type="submit" variant="accent">Load demo data</Button>
+              <Button type="submit" variant="accent">Load sample data</Button>
             </ActionForm>
           </CardContent>
         </Card>

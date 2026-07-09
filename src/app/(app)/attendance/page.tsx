@@ -81,7 +81,7 @@ export default async function AttendancePage({ searchParams }: { searchParams: P
       )}
 
       {!records?.length ? (
-        <EmptyState title="No attendance records in this range" hint="Add a manual entry, import a file, or load demo data." />
+        <EmptyState title="No attendance records in this range" hint="Add a manual entry, import a file, or load sample data." />
       ) : (
         <Table>
           <thead>

@@ -27,7 +27,7 @@ export default async function OnboardingPage() {
         <ActionForm action={createCompany} className="space-y-4" resetOnSuccess={false}>
           <div>
             <Label>Company name *</Label>
-            <Input name="name" required placeholder="Demo SME Philippines Inc." />
+            <Input name="name" required placeholder="Your Company Inc." />
           </div>
           <div className="grid grid-cols-2 gap-4">
             <div>

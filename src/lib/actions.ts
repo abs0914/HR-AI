@@ -775,12 +775,12 @@ export async function deletePolicy(fd: FormData): Promise<ActionResult> {
 
 export async function seedDemoData(): Promise<ActionResult> {
   const session = await requireSession();
-  if (session.role !== "owner") return fail("Only the Owner can load demo data.");
+  if (session.role !== "owner") return fail("Only the Owner can load sample data.");
   const admin = createAdminClient();
   const cid = session.companyId;
 
   const { data: existing } = await admin.from("employees").select("id").eq("company_id", cid).limit(1);
-  if (existing?.length) return fail("Demo data skipped: this company already has employees.");
+  if (existing?.length) return fail("Sample data skipped: this company already has employees.");
 
   const { data: branch } = await admin.from("branches").insert({ company_id: cid, name: "Main Branch", address: "Cebu City" }).select("id").single();
   const { data: dept } = await admin.from("departments").insert({ company_id: cid, name: "Operations" }).select("id").single();
@@ -808,7 +808,7 @@ export async function seedDemoData(): Promise<ActionResult> {
       company_id: cid, branch_id: branch!.id, department_id: dept!.id, position_id: positions[e.pos],
       employee_number: `EMP-${String(i + 1).padStart(3, "0")}`,
       first_name: e.first_name, last_name: e.last_name,
-      email: `${e.first_name.toLowerCase()}.${e.last_name.toLowerCase().replace(/\s/g, "")}@demo.ph`,
+      email: `${e.first_name.toLowerCase()}.${e.last_name.toLowerCase().replace(/\s/g, "")}@example.ph`,
       employment_status: e.status, employment_type: "full_time",
       salary_type: "monthly", salary_amount: e.salary,
       hire_date: iso(e.hire), regularization_date: e.status === "regular" ? iso(reg) : null,
@@ -873,12 +873,12 @@ export async function seedDemoData(): Promise<ActionResult> {
     { company_id: cid, reminder_type: "government_contributions", title: "SSS / PhilHealth / Pag-IBIG remittance", description: "Template-based reminder. Verify actual deadlines with the agencies.", due_date: soon(10), status: "open" },
   ]);
 
-  // demo documents (metadata only; generate real files via Kawani AI)
+  // sample documents (metadata only; generate real files via Kawani AI)
   await admin.from("employee_documents").insert([
-    { company_id: cid, employee_id: empIds["Juan Dela Cruz"], document_type: "employment_contract", title: "Employment Contract — Juan Dela Cruz", status: "approved", content: "Demo seeded record. Ask Kawani AI to generate a real contract.", created_by: session.userId },
-    { company_id: cid, employee_id: empIds["Juan Dela Cruz"], document_type: "certificate_of_employment", title: "COE — Juan Dela Cruz", status: "draft", generated_by_ai: true, content: "Demo seeded record. Ask Kawani AI: 'Generate a COE for Juan Dela Cruz.'", created_by: session.userId },
-    { company_id: cid, document_type: "company_memo", title: "Memo — Attendance Policy", status: "approved", content: "Demo seeded record.", created_by: session.userId },
-    { company_id: cid, employee_id: empIds["Maria Santos"], document_type: "onboarding_checklist", title: "Onboarding Checklist — Maria Santos", status: "draft", generated_by_ai: true, content: "Demo seeded record.", created_by: session.userId },
+    { company_id: cid, employee_id: empIds["Juan Dela Cruz"], document_type: "employment_contract", title: "Employment Contract — Juan Dela Cruz", status: "approved", content: "Sample seeded record. Ask Kawani AI to generate a real contract.", created_by: session.userId },
+    { company_id: cid, employee_id: empIds["Juan Dela Cruz"], document_type: "certificate_of_employment", title: "COE — Juan Dela Cruz", status: "draft", generated_by_ai: true, content: "Sample seeded record. Ask Kawani AI: 'Generate a COE for Juan Dela Cruz.'", created_by: session.userId },
+    { company_id: cid, document_type: "company_memo", title: "Memo — Attendance Policy", status: "approved", content: "Sample seeded record.", created_by: session.userId },
+    { company_id: cid, employee_id: empIds["Maria Santos"], document_type: "onboarding_checklist", title: "Onboarding Checklist — Maria Santos", status: "draft", generated_by_ai: true, content: "Sample seeded record.", created_by: session.userId },
   ]);
 
   // demo policies — ground Kawani AI's policy answers
@@ -893,7 +893,7 @@ export async function seedDemoData(): Promise<ActionResult> {
     },
   ]);
 
-  await logAudit({ companyId: cid, userId: session.userId, module: "settings", action: "demo_data_seeded" });
+  await logAudit({ companyId: cid, userId: session.userId, module: "settings", action: "sample_data_seeded" });
   revalidatePath("/dashboard");
-  return done("Demo data loaded: 5 employees, 10 days of attendance, leave requests, reminders, and documents.");
+  return done("Sample data loaded: 5 employees, 10 days of attendance, leave requests, reminders, and documents.");
 }

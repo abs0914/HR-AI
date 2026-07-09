@@ -39,7 +39,7 @@ export default async function EmployeesPage({ searchParams }: { searchParams: Pr
       </form>
 
       {!employees?.length ? (
-        <EmptyState title="No employees found" hint="Add your first employee or load demo data from the dashboard." />
+        <EmptyState title="No employees found" hint="Add your first employee or load sample data from the dashboard." />
       ) : (
         <Table>
           <thead>

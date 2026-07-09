@@ -59,8 +59,8 @@ export default function LandingPage() {
             <Link href="/signup" className="neu-pressable inline-flex items-center gap-2 rounded-2xl bg-gradient-to-b from-teal-600 to-teal-700 px-6 py-3.5 text-base font-semibold text-white shadow-[0_12px_28px_-10px_rgba(15,118,110,0.65)]">
               Start Free <ArrowRight size={17} />
             </Link>
-            <a href="mailto:hello@kawani.ai?subject=Book a Demo" className="neu-pressable glass-strong inline-flex items-center rounded-2xl px-6 py-3.5 text-base font-semibold text-gray-700">
-              Book Demo
+            <a href="mailto:hello@kawani.ai?subject=Talk to Sales" className="neu-pressable glass-strong inline-flex items-center rounded-2xl px-6 py-3.5 text-base font-semibold text-gray-700">
+              Talk to Sales
             </a>
           </div>
           <p className="mt-4 text-xs text-gray-400">No credit card needed · GCash, Maya & cards for upgrades</p>
