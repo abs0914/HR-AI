@@ -1,5 +1,6 @@
 import { createClient } from "@/lib/supabase/server";
 import { redirect } from "next/navigation";
+import { getPlatformAdmin } from "@/lib/platform-admin";
 
 export type Role = "owner" | "hr_admin" | "manager" | "accountant" | "employee";
 
@@ -37,6 +38,10 @@ export async function requireSession(): Promise<SessionContext> {
   const { data: { user } } = await supabase.auth.getUser();
   if (!user) redirect("/login");
   const ctx = await getSessionContext();
-  if (!ctx) redirect("/onboarding");
+  if (!ctx) {
+    const admin = await getPlatformAdmin();
+    if (admin) redirect("/admin");
+    redirect("/onboarding");
+  }
   return ctx;
 }

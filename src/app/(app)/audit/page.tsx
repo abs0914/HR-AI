@@ -3,6 +3,7 @@ import { requireSession } from "@/lib/auth";
 import { createClient } from "@/lib/supabase/server";
 import { can } from "@/lib/rbac";
 import { PageHeader, Table, Th, Td, Button, EmptyState, Input, Label, Select } from "@/components/ui";
+import { effectivePlan, hasFeature, PLAN_CONFIG } from "@/lib/billing";
 
 const MODULES = ["employees", "documents", "attendance", "leave", "payroll", "recruitment", "compliance", "ai", "settings", "auth"];
 
@@ -13,6 +14,16 @@ export default async function AuditPage({ searchParams }: {
   if (!can(session.role, "audit.read")) redirect("/dashboard");
   const sp = await searchParams;
   const supabase = await createClient();
+  const { data: company } = await supabase.from("companies").select("plan, paid_until, plan_expires_at").eq("id", session.companyId).single();
+  const plan = effectivePlan(company ?? {});
+  if (!hasFeature(plan, "advanced_audit")) {
+    return (
+      <>
+        <PageHeader title="Audit Logs" subtitle="Available on Pro and Enterprise plans" />
+        <EmptyState title="Upgrade required" hint={`${PLAN_CONFIG[plan].name} does not include advanced audit logs.`} />
+      </>
+    );
+  }
 
   let query = supabase.from("audit_logs")
     .select("*, employees(first_name, last_name)")

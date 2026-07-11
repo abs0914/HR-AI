@@ -1,6 +1,7 @@
 import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { getSessionContext } from "@/lib/auth";
+import { getPlatformAdmin } from "@/lib/platform-admin";
 import { createCompany } from "@/lib/actions";
 import { ActionForm, Toaster } from "@/components/action-form";
 import { Button, Input, Label, Select } from "@/components/ui";
@@ -10,6 +11,8 @@ export default async function OnboardingPage() {
   const supabase = await createClient();
   const { data: { user } } = await supabase.auth.getUser();
   if (!user) redirect("/login");
+  const admin = await getPlatformAdmin();
+  if (admin) redirect("/admin");
   const existing = await getSessionContext();
   if (existing) redirect("/dashboard");
 
@@ -21,7 +24,7 @@ export default async function OnboardingPage() {
           <span className="orb flex h-11 w-11 items-center justify-center"><Bot size={22} className="relative z-10 text-white drop-shadow" /></span>
           <div>
             <h1 className="text-lg font-bold">Set up your company</h1>
-            <p className="text-sm text-gray-500">You will be the Owner of this workspace.</p>
+            <p className="text-sm text-gray-500">Create a Free workspace or start a PayMongo subscription for a paid plan.</p>
           </div>
         </div>
         <ActionForm action={createCompany} className="space-y-4" resetOnSuccess={false}>
@@ -67,13 +70,23 @@ export default async function OnboardingPage() {
               <Label>Number of employees</Label>
               <Select name="employee_count" defaultValue="">
                 <option value="">Select…</option>
-                <option>1-10</option>
-                <option>11-50</option>
+                <option>1-3</option>
+                <option>10-50</option>
                 <option>51-150</option>
-                <option>151-500</option>
-                <option>500+</option>
+                <option>151-300</option>
+                <option>301+</option>
               </Select>
             </div>
+          </div>
+          <div>
+            <Label>Plan interest</Label>
+            <Select name="plan_interest" defaultValue="free">
+              <option value="free">Free - testing Kawani AI</option>
+              <option value="core">Core - 10-50 employees</option>
+              <option value="business">Business - 51-150 employees</option>
+              <option value="pro">Pro - 151-300 employees</option>
+              <option value="enterprise">Enterprise - custom</option>
+            </Select>
           </div>
           <div>
             <Label>Work schedule</Label>

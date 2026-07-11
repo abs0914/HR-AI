@@ -1,0 +1,20 @@
+{
+	email {$ACME_EMAIL}
+}
+
+kawaniai.com {
+	encode gzip zstd
+	reverse_proxy hr-ai:3000
+}
+
+www.kawaniai.com {
+	redir https://kawaniai.com{uri} permanent
+}
+
+hermes.kawaniai.com {
+	encode gzip zstd
+	basic_auth {
+		{$HERMES_BASIC_AUTH_USER} {$HERMES_BASIC_AUTH_HASH}
+	}
+	reverse_proxy hermes:8642
+}

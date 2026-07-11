@@ -152,7 +152,8 @@ export async function runAgent(
   provider: "groq" | "openai" | "anthropic",
   systemPrompt: string,
   history: HistoryMessage[],
-  tc: ToolContext
+  tc: ToolContext,
+  opts?: { modelOverride?: string }
 ): Promise<AgentRun> {
   if (provider === "anthropic") {
     try {
@@ -163,13 +164,13 @@ export async function runAgent(
       console.error("anthropic failed, falling back:", e.message);
       const fallback = hasOpenAI() ? ("openai" as const) : ("groq" as const);
       const client = fallback === "groq" ? groqClient() : openaiClient();
-      const model = fallback === "groq" ? GROQ_CHAT_MODEL : OPENAI_MODEL;
+      const model = fallback === "groq" ? (opts?.modelOverride ?? GROQ_CHAT_MODEL) : OPENAI_MODEL;
       const run = await runOpenAIStyleLoop(client, model, systemPrompt, history, tc);
       return { ...run, provider: fallback, model };
     }
   }
   const client = provider === "groq" ? groqClient() : openaiClient();
-  const model = provider === "groq" ? GROQ_CHAT_MODEL : OPENAI_MODEL;
+  const model = provider === "groq" ? (opts?.modelOverride ?? GROQ_CHAT_MODEL) : OPENAI_MODEL;
   // Groq (front desk) gets only the read/query tools — simpler schemas, more reliable calls
   const toolNames = provider === "groq" ? READ_TOOL_NAMES : undefined;
   try {

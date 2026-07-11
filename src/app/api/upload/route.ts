@@ -5,6 +5,7 @@ import { createAdminClient } from "@/lib/supabase/admin";
 import { can } from "@/lib/rbac";
 import { logAudit } from "@/lib/audit";
 import { rateLimit, LIMITS } from "@/lib/rate-limit";
+import { effectivePlan, hasFeature, PLAN_CONFIG } from "@/lib/billing";
 import * as XLSX from "xlsx";
 
 export const maxDuration = 60;
@@ -47,14 +48,61 @@ export async function POST(req: NextRequest) {
 
   const form = await req.formData();
   const file = form.get("file");
-  const purpose = String(form.get("purpose") ?? "general"); // resume | attendance_import | employee_document | general
+  const purpose = String(form.get("purpose") ?? "general"); // resume | attendance_import | employee_document | company_logo | general
   const employeeId = form.get("employeeId") ? String(form.get("employeeId")) : null;
   const documentType = String(form.get("documentType") ?? "other");
   if (!(file instanceof File)) return NextResponse.json({ error: "file required" }, { status: 400 });
   if (file.size > 10 * 1024 * 1024) return NextResponse.json({ error: "Max file size is 10 MB" }, { status: 400 });
 
-  const admin = createAdminClient();
   const supabase = await createClient();
+  const { data: company } = await supabase.from("companies")
+    .select("plan, paid_until, plan_expires_at")
+    .eq("id", session.companyId)
+    .single();
+  const plan = effectivePlan(company ?? {});
+  if (purpose === "resume" && !hasFeature(plan, "resume_analysis")) {
+    return NextResponse.json({ error: `${PLAN_CONFIG[plan].name} does not include resume analysis AI. Upgrade to Business or higher.` }, { status: 403 });
+  }
+  if (purpose === "attendance_import" && !hasFeature(plan, "attendance_import")) {
+    return NextResponse.json({ error: `${PLAN_CONFIG[plan].name} does not include attendance import. Upgrade to Core or higher.` }, { status: 403 });
+  }
+
+  const admin = createAdminClient();
+
+  // ---- company document logo ----
+  if (purpose === "company_logo") {
+    if (!can(session.role, "settings.manage")) {
+      return NextResponse.json({ error: "Not permitted" }, { status: 403 });
+    }
+    const allowed = new Set(["image/png", "image/jpeg"]);
+    if (!allowed.has(file.type)) {
+      return NextResponse.json({ error: "Logo must be a PNG or JPEG image." }, { status: 400 });
+    }
+    if (file.size > 2 * 1024 * 1024) {
+      return NextResponse.json({ error: "Logo must be 2 MB or smaller." }, { status: 400 });
+    }
+    const extension = file.type === "image/png" ? "png" : "jpg";
+    const path = `${session.companyId}/branding/document-logo.${extension}`;
+    const { error: logoError } = await admin.storage.from("documents").upload(
+      path,
+      Buffer.from(await file.arrayBuffer()),
+      { contentType: file.type, upsert: true }
+    );
+    if (logoError) return NextResponse.json({ error: logoError.message }, { status: 500 });
+    const { error: companyError } = await supabase.from("companies")
+      .update({ document_logo_path: path, updated_at: new Date().toISOString() })
+      .eq("id", session.companyId);
+    if (companyError) return NextResponse.json({ error: companyError.message }, { status: 500 });
+    await logAudit({
+      companyId: session.companyId,
+      userId: session.userId,
+      module: "settings",
+      action: "document_logo_updated",
+      details: { path, filename: file.name, size: file.size },
+    });
+    return NextResponse.json({ ok: true, path });
+  }
+
   const safeName = file.name.replace(/[^a-zA-Z0-9._-]/g, "_");
   const path = `${session.companyId}/${employeeId ?? "general"}/${purpose === "resume" ? "resume" : documentType}/${Date.now()}_${safeName}`;
   const { error: upErr } = await admin.storage.from("documents")

@@ -4,6 +4,7 @@ import { createClient } from "@/lib/supabase/server";
 import { can } from "@/lib/rbac";
 import { logAudit } from "@/lib/audit";
 import { rowsToCsv, rowsToXlsx } from "@/lib/docgen";
+import { effectivePlan, hasFeature, PLAN_CONFIG } from "@/lib/billing";
 
 export async function GET(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   const session = await getSessionContext();
@@ -13,6 +14,11 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ id: 
   const { id } = await params;
   const fmt = req.nextUrl.searchParams.get("fmt") === "csv" ? "csv" : "xlsx";
   const supabase = await createClient();
+  const { data: company } = await supabase.from("companies").select("plan, paid_until, plan_expires_at").eq("id", session.companyId).single();
+  const plan = effectivePlan(company ?? {});
+  if (!hasFeature(plan, "report_exports")) {
+    return NextResponse.json({ error: `${PLAN_CONFIG[plan].name} does not include report exports. Upgrade to Pro or Enterprise.` }, { status: 403 });
+  }
   const { data: fp } = await supabase.from("final_pay")
     .select("*, employees(first_name, last_name, employee_number)")
     .eq("id", id).maybeSingle();

@@ -6,7 +6,8 @@ import { updateCompany, addOrgItem, inviteUser, updateUserRole, linkUserToEmploy
 import { ActionForm } from "@/components/action-form";
 import { PageHeader, Button, Input, Label, Select, Card, CardContent, CardHeader, CardTitle, Badge, Textarea } from "@/components/ui";
 import { createAdminClient } from "@/lib/supabase/admin";
-import { hasPayMongo, effectivePlan } from "@/lib/billing";
+import { hasPayMongo, effectivePlan, PLAN_CONFIG, SELF_SERVE_PLANS } from "@/lib/billing";
+import { UploadButton } from "@/components/upload-button";
 
 export default async function SettingsPage() {
   const session = await requireSession();
@@ -27,6 +28,7 @@ export default async function SettingsPage() {
   const employeeByUser = new Map((employees ?? []).filter((e) => e.user_id).map((e) => [e.user_id as string, e]));
   const billingEnabled = hasPayMongo();
   const currentPlan = effectivePlan(company ?? {});
+  const activeEmployeeCount = (employees ?? []).length;
 
   // emails for members (service role; page already owner/hr_admin gated)
   const admin = createAdminClient();
@@ -65,6 +67,22 @@ export default async function SettingsPage() {
               <p className="text-xs text-gray-400">Timezone: {company?.timezone}</p>
               <Button type="submit">Save profile</Button>
             </ActionForm>
+            <div className="mt-5 border-t border-line pt-4">
+              <Label>Document header logo</Label>
+              <p className="mb-3 text-xs text-gray-500">Shown with your company name at the top of generated DOCX and PDF documents.</p>
+              <div className="flex flex-wrap items-center gap-4">
+                {company?.document_logo_path && (
+                  <div className="flex h-16 w-40 items-center justify-center rounded-lg border border-line bg-white p-2">
+                    {/* eslint-disable-next-line @next/next/no-img-element */}
+                    <img src="/api/company/logo" alt={`${company.name} document logo`} className="max-h-full max-w-full object-contain" />
+                  </div>
+                )}
+                <div>
+                  <UploadButton purpose="company_logo" label={company?.document_logo_path ? "Replace logo" : "Upload logo"} accept="image/png,image/jpeg" />
+                  <p className="mt-1 text-xs text-gray-400">PNG or JPEG, up to 2 MB. A wide transparent PNG works best.</p>
+                </div>
+              </div>
+            </div>
           </CardContent>
         </Card>
 
@@ -72,18 +90,47 @@ export default async function SettingsPage() {
           <CardHeader><CardTitle>Billing & plan</CardTitle></CardHeader>
           <CardContent className="space-y-3">
             <p className="text-sm text-gray-700">
-              Current plan: <Badge status={currentPlan === "free" ? "inactive" : "active"}>{currentPlan}</Badge>
-              {company?.plan_expires_at && (
+              Current plan: <Badge status={currentPlan === "free" ? "inactive" : "active"}>{PLAN_CONFIG[currentPlan].name}</Badge>
+              {(company?.paid_until ?? company?.plan_expires_at) && (
                 <span className="ml-2 text-xs text-gray-400">
-                  {new Date(company.plan_expires_at).getTime() < Date.now() ? "expired" : "renews/expires"}{" "}
-                  {new Date(company.plan_expires_at).toLocaleDateString("en-PH", { dateStyle: "medium" })}
+                  {new Date(company.paid_until ?? company.plan_expires_at).getTime() < Date.now() ? "expired" : "renews/expires"}{" "}
+                  {new Date(company.paid_until ?? company.plan_expires_at).toLocaleDateString("en-PH", { dateStyle: "medium" })}
                 </span>
               )}
             </p>
             <p className="text-xs text-gray-500">
+              Free supports testing with up to 3 employees and 1 branch. Paid plans bill monthly by employee count. Current active employees: {activeEmployeeCount}.
+            </p>
+            <p className="hidden">
               Free: Groq Q&A and data lookups only. Premium (₱1,499/30 days): AI document generation, resume analysis, payroll exports, Claude drafting. Enterprise (₱6,999/30 days): everything, priority support.
             </p>
             {isOwner && billingEnabled && (
+              <div className="grid gap-2 sm:grid-cols-3">
+                {SELF_SERVE_PLANS.map((plan) => (
+                  <form key={plan} action="/api/billing/checkout" method="get" className="rounded-lg border border-line bg-white/60 p-3">
+                    <input type="hidden" name="plan" value={plan} />
+                    <p className="text-sm font-semibold text-gray-900">{PLAN_CONFIG[plan].name}</p>
+                    <p className="text-xs text-gray-500">{PLAN_CONFIG[plan].priceLabel}</p>
+                    <Label className="mt-2 block">Employees</Label>
+                    <Input
+                      type="number"
+                      name="employee_count"
+                      min={PLAN_CONFIG[plan].employeeRange.min}
+                      max={PLAN_CONFIG[plan].employeeRange.max ?? undefined}
+                      defaultValue={Math.max(activeEmployeeCount, PLAN_CONFIG[plan].employeeRange.min)}
+                      required
+                    />
+                    <Button type="submit" size="sm" className="mt-2 w-full">Pay with PayMongo</Button>
+                  </form>
+                ))}
+                <a href="mailto:hello@kawani.ai?subject=Enterprise%20pricing" className="rounded-lg border border-line bg-white/60 p-3 text-sm text-gray-700 hover:bg-white">
+                  <span className="font-semibold text-gray-900">Enterprise</span>
+                  <span className="mt-1 block text-xs text-gray-500">Custom pricing, SLA, integrations, private deployment option.</span>
+                  <Button type="button" size="sm" variant="outline" className="mt-2 w-full">Contact sales</Button>
+                </a>
+              </div>
+            )}
+            {false && isOwner && billingEnabled && (
               <div className="flex gap-2">
                 <a href="/api/billing/checkout?plan=premium"><Button>Upgrade to Premium — GCash/Maya/Card</Button></a>
                 <a href="/api/billing/checkout?plan=enterprise"><Button variant="outline">Enterprise</Button></a>
@@ -94,9 +141,11 @@ export default async function SettingsPage() {
                 <input type="hidden" name="name" value={company?.name ?? ""} />
                 <div className="flex-1">
                   <Label>Plan (dev mode — PayMongo not configured)</Label>
-                  <Select name="plan" defaultValue={company?.plan ?? "premium"}>
+                  <Select name="plan" defaultValue={company?.plan ?? "free"}>
                     <option value="free">Free</option>
-                    <option value="premium">Premium</option>
+                    <option value="core">Core</option>
+                    <option value="business">Business</option>
+                    <option value="pro">Pro</option>
                     <option value="enterprise">Enterprise</option>
                   </Select>
                 </div>
