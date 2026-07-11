@@ -24,6 +24,14 @@ const PLANS = [
   { name: "Enterprise", price: "Let's talk", features: ["Unlimited employees", "Custom templates", "Dedicated support", "SLA"] },
 ];
 
+const SAAS_PLANS = [
+  { name: "Free", price: "₱0", per: "/month", features: ["For testing Kawani AI", "Up to 3 employees", "1 branch", "AI HR Q&A", "Policy knowledge base", "Limited data lookups", "No premium document generation", "No payroll export", "No voice input"] },
+  { name: "Core", price: "₱100", per: "/employee/month", features: ["10-50 employees", "Employee 201 records", "AI HR Q&A", "Attendance import", "Leave workflows", "Basic HR document generation", "Payroll preparation summary", "AI-powered HR assistant", "Agentic Task workflows"] },
+  { name: "Business", price: "₱90", per: "/employee/month", featured: true, features: ["51-150 employees", "Everything in Core", "Multi-branch", "Compliance dashboard", "Payroll export", "Resume analysis AI", "Premium AI document generation", "Limited OpenAI/Claude task credits"] },
+  { name: "Pro", price: "₱80", per: "/employee/month", features: ["151-300 employees", "Everything in Business", "Voice input", "Priority AI engines", "Advanced audit logs", "Custom workflows", "More OpenAI/Claude task credits", "Report exports"] },
+  { name: "Enterprise", price: "Custom pricing", features: ["Unlimited or negotiated employee volume", "Custom templates", "Dedicated support", "SLA", "Custom integrations", "Data/privacy review support", "Private deployment option"] },
+];
+
 export default function LandingPage() {
   return (
     <main className="min-h-[100dvh] overflow-x-hidden">
@@ -151,7 +159,7 @@ export default function LandingPage() {
           Pay with GCash, Maya, or card. Upgrade or lapse back to free anytime — your data stays.
         </p>
         <div className="mt-10 grid gap-3 sm:grid-cols-2 lg:grid-cols-5">
-          {PLANS.map((p) => (
+          {SAAS_PLANS.map((p) => (
             <div
               key={p.name}
               className={`lift glass-card relative flex flex-col rounded-3xl p-5 ${p.featured ? "ring-2 ring-teal-500/60 shadow-[0_18px_44px_-16px_rgba(15,118,110,0.4)]" : ""}`}
@@ -180,7 +188,7 @@ export default function LandingPage() {
                     : "glass-strong text-gray-700"
                 }`}
               >
-                {p.name === "Enterprise" ? "Contact us" : "Start Free"}
+                {p.name === "Enterprise" ? "Contact us" : p.name === "Free" ? "Start Free" : "Create account"}
               </Link>
             </div>
           ))}
@@ -194,9 +202,10 @@ export default function LandingPage() {
             <KawaniMark size={26} />
             <span>© {new Date().getFullYear()} <b className="text-[#0e2a47]">Kawani</b> <b className="text-teal-600">AI</b> · Built for Philippine SMEs</span>
           </span>
+          <span className="text-xs font-medium text-gray-500">Powered by PhilVirtualOffice Business Support Services</span>
           <nav className="flex gap-5">
-            <a href="#" className="hover:text-gray-900">Privacy Policy</a>
-            <a href="#" className="hover:text-gray-900">Terms</a>
+            <Link href="/privacy" className="hover:text-gray-900">Privacy Policy</Link>
+            <Link href="/terms" className="hover:text-gray-900">Terms</Link>
             <a href="mailto:hello@kawani.ai" className="hover:text-gray-900">Contact</a>
             <Link href="/login" className="hover:text-gray-900">Login</Link>
           </nav>

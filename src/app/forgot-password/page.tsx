@@ -1,2 +1,10 @@
 import { AuthForm } from "@/components/auth-form";
-export default function ForgotPasswordPage() { return <AuthForm mode="forgot" />; }
+import { Suspense } from "react";
+
+export default function ForgotPasswordPage() {
+  return (
+    <Suspense fallback={null}>
+      <AuthForm mode="forgot" />
+    </Suspense>
+  );
+}

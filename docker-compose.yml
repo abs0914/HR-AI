@@ -1,0 +1,73 @@
+services:
+  hr-ai:
+    build:
+      context: .
+      args:
+        NEXT_PUBLIC_SUPABASE_URL: ${NEXT_PUBLIC_SUPABASE_URL}
+        NEXT_PUBLIC_SUPABASE_ANON_KEY: ${NEXT_PUBLIC_SUPABASE_ANON_KEY}
+    image: hr-ai:latest
+    container_name: hr-ai
+    restart: unless-stopped
+    env_file:
+      - path: .env.production
+        required: false
+    environment:
+      NODE_ENV: production
+      PORT: 3000
+      APP_URL: ${APP_URL:-https://kawaniai.com}
+      HERMES_API_URL: ${HERMES_API_URL:-http://hermes:8642}
+    expose:
+      - "3000"
+    networks:
+      - hr-ai-private
+    depends_on:
+      - hermes
+
+  hermes:
+    image: nousresearch/hermes-agent:latest
+    container_name: hermes
+    restart: unless-stopped
+    command: gateway run
+    environment:
+      API_SERVER_ENABLED: "true"
+      API_SERVER_HOST: 0.0.0.0
+      API_SERVER_PORT: 8642
+      API_SERVER_KEY: ${HERMES_API_KEY}
+      API_SERVER_CORS_ORIGINS: ${HERMES_API_CORS_ORIGINS:-https://kawaniai.com,https://hermes.kawaniai.com}
+      HERMES_DASHBOARD: ${HERMES_DASHBOARD:-0}
+    volumes:
+      - hermes_data:/opt/data
+    expose:
+      - "8642"
+    networks:
+      - hr-ai-private
+
+  caddy:
+    image: caddy:2-alpine
+    container_name: caddy
+    restart: unless-stopped
+    depends_on:
+      - hr-ai
+      - hermes
+    environment:
+      ACME_EMAIL: ${ACME_EMAIL:-admin@kawaniai.com}
+      HERMES_BASIC_AUTH_USER: ${HERMES_BASIC_AUTH_USER:-admin}
+      HERMES_BASIC_AUTH_HASH: ${HERMES_BASIC_AUTH_HASH}
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+    networks:
+      - hr-ai-private
+
+volumes:
+  caddy_data:
+  caddy_config:
+  hermes_data:
+
+networks:
+  hr-ai-private:
+    driver: bridge

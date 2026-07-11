@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { useRouter } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import Link from "next/link";
 import { createClient } from "@/lib/supabase/client";
 import { Button, Input, Label } from "@/components/ui";
@@ -9,6 +9,7 @@ import { KawaniMark } from "@/components/logo";
 
 export function AuthForm({ mode }: { mode: "login" | "signup" | "forgot" }) {
   const router = useRouter();
+  const searchParams = useSearchParams();
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [error, setError] = useState<string | null>(null);
@@ -23,14 +24,23 @@ export function AuthForm({ mode }: { mode: "login" | "signup" | "forgot" }) {
       if (mode === "login") {
         const { error } = await supabase.auth.signInWithPassword({ email, password });
         if (error) throw error;
-        router.push("/console");
+        const next = searchParams.get("next");
+        const destination = next?.startsWith("/") && !next.startsWith("//")
+          ? next
+          : email.toLowerCase() === "admin@kawaniai.com"
+            ? "/admin"
+            : "/console";
+        router.push(destination);
         router.refresh();
       } else if (mode === "signup") {
         const { error } = await supabase.auth.signUp({ email, password });
         if (error) throw error;
         // if email confirmation is disabled, a session exists — go straight to onboarding
         const { data: { session } } = await supabase.auth.getSession();
-        if (session) { router.push("/onboarding"); router.refresh(); }
+        if (session) {
+          router.push(email.toLowerCase() === "admin@kawaniai.com" ? "/admin" : "/onboarding");
+          router.refresh();
+        }
         else setNotice("Check your email to confirm your account, then log in.");
       } else {
         const { error } = await supabase.auth.resetPasswordForEmail(email, {

@@ -3,6 +3,7 @@ import { getSessionContext } from "@/lib/auth";
 import { createClient } from "@/lib/supabase/server";
 import { logAudit } from "@/lib/audit";
 import { signedUrl, textToDocx, textToPdf } from "@/lib/docgen";
+import { createAdminClient } from "@/lib/supabase/admin";
 
 export async function GET(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   const session = await getSessionContext();
@@ -22,7 +23,24 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ id: 
 
   // regenerate from stored content for docx/pdf; otherwise redirect to the stored file
   if (doc.content && (fmt === "pdf" || fmt === "docx")) {
-    const buf = fmt === "pdf" ? await textToPdf(doc.title, doc.content) : await textToDocx(doc.title, doc.content);
+    const { data: company } = await supabase.from("companies")
+      .select("name, document_logo_path")
+      .eq("id", session.companyId)
+      .single();
+    let logo: Buffer | null = null;
+    if (company?.document_logo_path) {
+      const admin = createAdminClient();
+      const { data } = await admin.storage.from("documents").download(company.document_logo_path);
+      if (data) logo = Buffer.from(await data.arrayBuffer());
+    }
+    const branding = company ? {
+      companyName: company.name,
+      logo,
+      logoType: company.document_logo_path?.toLowerCase().endsWith(".png") ? "png" as const : "jpg" as const,
+    } : undefined;
+    const buf = fmt === "pdf"
+      ? await textToPdf(doc.title, doc.content, branding)
+      : await textToDocx(doc.title, doc.content, branding);
     return new NextResponse(new Uint8Array(buf), {
       headers: {
         "Content-Type": fmt === "pdf" ? "application/pdf"

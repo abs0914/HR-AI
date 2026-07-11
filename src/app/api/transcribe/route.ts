@@ -1,11 +1,22 @@
 import { NextRequest, NextResponse } from "next/server";
 import { groqClient, openaiClient, hasGroq, hasOpenAI } from "@/lib/agent/providers";
 import { getSessionContext } from "@/lib/auth";
+import { createClient } from "@/lib/supabase/server";
+import { effectivePlan, hasFeature, PLAN_CONFIG } from "@/lib/billing";
 import { rateLimit, LIMITS } from "@/lib/rate-limit";
 
 export async function POST(req: NextRequest) {
   const session = await getSessionContext();
   if (!session) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  const supabase = await createClient();
+  const { data: company } = await supabase.from("companies")
+    .select("plan, paid_until, plan_expires_at")
+    .eq("id", session.companyId)
+    .single();
+  const plan = effectivePlan(company ?? {});
+  if (!hasFeature(plan, "voice_input")) {
+    return NextResponse.json({ error: `${PLAN_CONFIG[plan].name} does not include voice input. Upgrade to Pro or Enterprise.` }, { status: 403 });
+  }
   const rl = rateLimit(`transcribe:${session.userId}`, LIMITS.transcribe.limit, LIMITS.transcribe.windowMs);
   if (!rl.allowed) {
     return NextResponse.json({ error: "Too many voice requests — please wait a moment." },

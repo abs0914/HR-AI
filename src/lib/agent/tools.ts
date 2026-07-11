@@ -3,6 +3,7 @@ import type { SessionContext } from "@/lib/auth";
 import { can, employeeColumns, type Permission } from "@/lib/rbac";
 import { logAudit } from "@/lib/audit";
 import { createAdminClient } from "@/lib/supabase/admin";
+import { effectivePlan, hasFeature, PLAN_CONFIG, type Plan, type PlanFeature } from "@/lib/billing";
 import {
   fillTemplate, missingVariables, textToDocx, textToPdf, rowsToXlsx, saveToStorage,
 } from "@/lib/docgen";
@@ -33,6 +34,70 @@ type ToolDef = {
 };
 
 const deny = (msg = "You do not have permission to do this."): ToolResult => ({ ok: false, message: msg });
+
+const TOOL_FEATURES: Partial<Record<string, PlanFeature>> = {
+  create_employee_draft: "agentic_workflows",
+  update_employee_draft: "agentic_workflows",
+  generate_document: "document_generation",
+  save_document_content: "document_generation",
+  generate_payroll_summary: "payroll_summary",
+  export_payroll_xlsx: "payroll_export",
+  create_leave_request: "leave_workflows",
+  approve_leave_request: "leave_workflows",
+  reject_leave_request: "leave_workflows",
+  analyze_resume: "resume_analysis",
+  create_compliance_reminder: "compliance_dashboard",
+  list_compliance_reminders: "compliance_dashboard",
+  compute_final_pay: "payroll_summary",
+  list_final_pay: "payroll_summary",
+};
+
+const PREMIUM_DOCUMENT_TYPES = new Set([
+  "notice_to_explain", "written_warning", "resignation_acceptance", "quitclaim",
+  "employment_contract_regular", "performance_evaluation",
+]);
+
+async function currentPlan(tc: ToolContext): Promise<Plan> {
+  const admin = createAdminClient();
+  const { data } = await admin.from("companies")
+    .select("plan, paid_until, plan_expires_at")
+    .eq("id", tc.session.companyId)
+    .single();
+  return effectivePlan(data ?? {});
+}
+
+async function enforceToolPlan(name: string, args: any, tc: ToolContext): Promise<ToolResult | null> {
+  const feature = TOOL_FEATURES[name];
+  if (!feature) return null;
+  const plan = await currentPlan(tc);
+  if (!hasFeature(plan, feature)) {
+    return deny(`${PLAN_CONFIG[plan].name} does not include ${feature.replace(/_/g, " ")}. Upgrade to use this workflow.`);
+  }
+  if (name === "generate_document" && PREMIUM_DOCUMENT_TYPES.has(String(args?.template_type ?? "")) && !hasFeature(plan, "premium_document_generation")) {
+    return deny(`${PLAN_CONFIG[plan].name} includes basic HR document generation only. Upgrade to Business or higher for premium or sensitive document drafting.`);
+  }
+  return null;
+}
+
+async function employeeLimitReached(companyId: string): Promise<{ reached: boolean; message?: string }> {
+  const admin = createAdminClient();
+  const { data: company } = await admin.from("companies")
+    .select("plan, paid_until, plan_expires_at")
+    .eq("id", companyId)
+    .single();
+  const plan = effectivePlan(company ?? {});
+  const max = PLAN_CONFIG[plan].employeeRange.max;
+  if (max === null) return { reached: false };
+  const { count, error } = await admin.from("employees")
+    .select("id", { count: "exact", head: true })
+    .eq("company_id", companyId)
+    .not("employment_status", "in", "(resigned,terminated,inactive,applicant)");
+  if (error) return { reached: true, message: error.message };
+  if ((count ?? 0) >= max) {
+    return { reached: true, message: `${PLAN_CONFIG[plan].name} allows up to ${max} active employee records. Upgrade before adding more employees.` };
+  }
+  return { reached: false };
+}
 
 // ---------- shared helpers ----------
 
@@ -253,6 +318,8 @@ export async function executeApprovedAction(action: {
   try {
     switch (action.tool_name) {
       case "create_employee_draft": {
+        const limit = await employeeLimitReached(action.company_id);
+        if (limit.reached) return { ok: false, message: limit.message ?? "Employee limit reached." };
         const { data, error } = await admin.from("employees").insert({
           company_id: action.company_id,
           first_name: input.first_name, last_name: input.last_name,
@@ -897,6 +964,8 @@ export function toolSchemas(names?: string[]) {
 export async function runTool(name: string, args: any, tc: ToolContext): Promise<ToolResult> {
   const tool = TOOLS.find((t) => t.name === name);
   if (!tool) return { ok: false, message: `Unknown tool: ${name}` };
+  const planBlock = await enforceToolPlan(name, args ?? {}, tc);
+  if (planBlock) return planBlock;
   if (tool.permission && !can(tc.session.role, tool.permission)) {
     return deny(`Your role (${tc.session.role.replace("_", " ")}) does not permit this action.`);
   }

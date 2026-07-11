@@ -26,6 +26,7 @@ export default async function AppLayout({ children }: { children: React.ReactNod
         <SidebarNav role={session.role} />
         <div className="px-4 py-4">
           <p className="mb-2 truncate px-1 text-xs text-gray-400">{session.email} · {session.role.replace("_", " ")}</p>
+          <p className="mb-3 px-1 text-[11px] leading-snug text-gray-400">Powered by PhilVirtualOffice Business Support Services</p>
           <LogoutButton />
         </div>
       </aside>
@@ -45,7 +46,10 @@ export default async function AppLayout({ children }: { children: React.ReactNod
       </header>
 
       <div className="md:ml-64">
-        <main className="mx-auto max-w-6xl px-4 pb-28 pt-20 md:px-8 md:pb-10 md:pt-8">{children}</main>
+        <main className="mx-auto max-w-6xl px-4 pb-28 pt-20 md:px-8 md:pb-10 md:pt-8">
+          {children}
+          <p className="mt-10 text-center text-xs text-gray-400 md:hidden">Powered by PhilVirtualOffice Business Support Services</p>
+        </main>
       </div>
 
       <BottomNav role={session.role} email={session.email} />

@@ -9,6 +9,7 @@ import { getSessionContext, requireSession } from "@/lib/auth";
 import { assertCan, can } from "@/lib/rbac";
 import { logAudit } from "@/lib/audit";
 import { executeApprovedAction } from "@/lib/agent/tools";
+import { effectivePlan, PLAN_CONFIG, normalizePlan, SELF_SERVE_PLANS, type Plan } from "@/lib/billing";
 
 type ActionResult = { ok: boolean; message: string };
 
@@ -18,6 +19,46 @@ const done = (message: string): ActionResult => ({ ok: true, message });
 function str(fd: FormData, key: string): string | null {
   const v = fd.get(key);
   return typeof v === "string" && v.trim() !== "" ? v.trim() : null;
+}
+
+async function currentPlanForCompany(companyId: string): Promise<Plan> {
+  const admin = createAdminClient();
+  const { data } = await admin.from("companies")
+    .select("plan, paid_until, plan_expires_at")
+    .eq("id", companyId)
+    .single();
+  return effectivePlan(data ?? {});
+}
+
+async function enforceEmployeeLimit(companyId: string): Promise<ActionResult | null> {
+  const plan = await currentPlanForCompany(companyId);
+  const max = PLAN_CONFIG[plan].employeeRange.max;
+  if (max === null) return null;
+  const admin = createAdminClient();
+  const { count, error } = await admin.from("employees")
+    .select("id", { count: "exact", head: true })
+    .eq("company_id", companyId)
+    .not("employment_status", "in", "(resigned,terminated,inactive,applicant)");
+  if (error) return fail(error.message);
+  if ((count ?? 0) >= max) {
+    return fail(`${PLAN_CONFIG[plan].name} allows up to ${max} active employee records. Upgrade before adding more employees.`);
+  }
+  return null;
+}
+
+async function enforceBranchLimit(companyId: string): Promise<ActionResult | null> {
+  const plan = await currentPlanForCompany(companyId);
+  const max = PLAN_CONFIG[plan].branchLimit;
+  if (max === null) return null;
+  const admin = createAdminClient();
+  const { count, error } = await admin.from("branches")
+    .select("id", { count: "exact", head: true })
+    .eq("company_id", companyId);
+  if (error) return fail(error.message);
+  if ((count ?? 0) >= max) {
+    return fail(`${PLAN_CONFIG[plan].name} allows up to ${max} branch${max === 1 ? "" : "es"}. Upgrade for multi-branch workspaces.`);
+  }
+  return null;
 }
 
 // ============ ONBOARDING ============
@@ -33,7 +74,7 @@ export async function createCompany(fd: FormData): Promise<ActionResult> {
 
   const admin = createAdminClient();
   const { data: existing } = await admin.from("company_users").select("id").eq("user_id", user.id).limit(1);
-  if (existing?.length) return fail("You already belong to a company.");
+  if (existing?.length) return fail("This account already manages one company workspace. Use a separate account for another company.");
 
   const { data: company, error } = await admin.from("companies").insert({
     name: parsed.data.name,
@@ -45,6 +86,8 @@ export async function createCompany(fd: FormData): Promise<ActionResult> {
     work_schedule: str(fd, "work_schedule"),
     employee_count: str(fd, "employee_count"),
     timezone: "Asia/Manila",
+    plan: "free",
+    billing_status: "free",
   }).select("id").single();
   if (error) return fail(error.message);
 
@@ -54,6 +97,11 @@ export async function createCompany(fd: FormData): Promise<ActionResult> {
   if (cuErr) return fail(cuErr.message);
 
   await logAudit({ companyId: company.id, userId: user.id, module: "settings", action: "company_created", details: { name: parsed.data.name } });
+  const planInterest = normalizePlan(str(fd, "plan_interest"));
+  if (SELF_SERVE_PLANS.includes(planInterest as any)) {
+    const employeeCount = PLAN_CONFIG[planInterest].employeeRange.min;
+    redirect(`/api/billing/checkout?plan=${planInterest}&employee_count=${employeeCount}`);
+  }
   redirect("/console");
 }
 
@@ -68,6 +116,10 @@ export async function saveEmployee(fd: FormData): Promise<ActionResult> {
   const first_name = str(fd, "first_name");
   const last_name = str(fd, "last_name");
   if (!first_name || !last_name) return fail("First and last name are required.");
+  if (!id) {
+    const limit = await enforceEmployeeLimit(session.companyId);
+    if (limit) return limit;
+  }
 
   const record: Record<string, unknown> = {
     company_id: session.companyId,
@@ -608,10 +660,12 @@ export async function updateCompany(fd: FormData): Promise<ActionResult> {
     if (fd.has(f)) update[f] = str(fd, f);
   }
   const plan = str(fd, "plan");
-  if (plan && ["free", "premium", "enterprise"].includes(plan)) {
+  if (plan && ["free", "core", "business", "pro", "enterprise"].includes(plan)) {
     if (session.role !== "owner") return fail("Only the Owner can change the plan.");
-    update.plan = plan;
+    update.plan = normalizePlan(plan);
     update.plan_expires_at = null; // manual dev-mode change has no expiry
+    update.paid_until = null;
+    update.billing_status = plan === "free" ? "free" : plan === "enterprise" ? "custom" : "active";
   }
   const { error } = await supabase.from("companies").update(update).eq("id", session.companyId);
   if (error) return fail(error.message);
@@ -626,6 +680,10 @@ export async function addOrgItem(fd: FormData): Promise<ActionResult> {
   const kind = str(fd, "kind"); // branch | department | position | holiday
   const name = str(fd, "name");
   if (!kind || !name) return fail("Name is required.");
+  if (kind === "branch") {
+    const limit = await enforceBranchLimit(session.companyId);
+    if (limit) return limit;
+  }
   const supabase = await createClient();
   let error;
   if (kind === "branch") ({ error } = await supabase.from("branches").insert({ company_id: session.companyId, name, address: str(fd, "address") }));

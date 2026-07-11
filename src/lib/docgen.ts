@@ -1,15 +1,59 @@
-import { Document, Packer, Paragraph, TextRun, HeadingLevel } from "docx";
-import { PDFDocument, StandardFonts } from "pdf-lib";
+import { AlignmentType, BorderStyle, Document, Header, HeadingLevel, ImageRun, Packer, Paragraph, TextRun } from "docx";
+import { PDFDocument, PDFImage, StandardFonts, rgb } from "pdf-lib";
 import * as XLSX from "xlsx";
 import { createAdminClient } from "@/lib/supabase/admin";
 
 export { fillTemplate, missingVariables } from "@/lib/template";
 
+export type DocumentBranding = {
+  companyName: string;
+  logo?: Buffer | null;
+  logoType?: "png" | "jpg" | null;
+};
+
+function logoSize(buffer: Buffer, type: "png" | "jpg"): { width: number; height: number } {
+  let width = 0, height = 0;
+  if (type === "png" && buffer.length >= 24) {
+    width = buffer.readUInt32BE(16);
+    height = buffer.readUInt32BE(20);
+  } else if (type === "jpg") {
+    let offset = 2;
+    while (offset + 8 < buffer.length) {
+      if (buffer[offset] !== 0xff) { offset++; continue; }
+      const marker = buffer[offset + 1];
+      const length = buffer.readUInt16BE(offset + 2);
+      if (marker >= 0xc0 && marker <= 0xc3) {
+        height = buffer.readUInt16BE(offset + 5);
+        width = buffer.readUInt16BE(offset + 7);
+        break;
+      }
+      offset += Math.max(length + 2, 2);
+    }
+  }
+  if (!width || !height) return { width: 120, height: 48 };
+  const maxWidth = 120, maxHeight = 48;
+  const scale = Math.min(maxWidth / width, maxHeight / height, 1);
+  return { width: Math.max(1, Math.round(width * scale)), height: Math.max(1, Math.round(height * scale)) };
+}
+
 // ---------- DOCX ----------
-export async function textToDocx(title: string, body: string): Promise<Buffer> {
+export async function textToDocx(title: string, body: string, branding?: DocumentBranding): Promise<Buffer> {
   const lines = body.split("\n");
+  const headerChildren = branding ? [
+    ...(branding.logo && branding.logoType ? [new Paragraph({
+      alignment: AlignmentType.CENTER,
+      children: [new ImageRun({ data: branding.logo, type: branding.logoType, transformation: logoSize(branding.logo, branding.logoType) })],
+      spacing: { after: 60 },
+    })] : []),
+    new Paragraph({
+      alignment: AlignmentType.CENTER,
+      children: [new TextRun({ text: branding.companyName, bold: true, size: 18, font: "Calibri" })],
+      border: { bottom: { color: "B8C0CC", size: 6, style: BorderStyle.SINGLE, space: 6 } },
+    }),
+  ] : [];
   const doc = new Document({
     sections: [{
+      headers: headerChildren.length ? { default: new Header({ children: headerChildren }) } : undefined,
       children: [
         new Paragraph({ text: title, heading: HeadingLevel.HEADING_1 }),
         ...lines.map(
@@ -26,7 +70,7 @@ export async function textToDocx(title: string, body: string): Promise<Buffer> {
 }
 
 // ---------- PDF (simple word-wrapped text) ----------
-export async function textToPdf(title: string, body: string): Promise<Buffer> {
+export async function textToPdf(title: string, body: string, branding?: DocumentBranding): Promise<Buffer> {
   const pdf = await PDFDocument.create();
   const font = await pdf.embedFont(StandardFonts.Helvetica);
   const bold = await pdf.embedFont(StandardFonts.HelveticaBold);
@@ -35,13 +79,35 @@ export async function textToPdf(title: string, body: string): Promise<Buffer> {
   const pageW = 595.28, pageH = 841.89; // A4
   const maxWidth = pageW - margin * 2;
 
+  let embeddedLogo: PDFImage | null = null;
+  if (branding?.logo && branding.logoType) {
+    embeddedLogo = branding.logoType === "png"
+      ? await pdf.embedPng(branding.logo)
+      : await pdf.embedJpg(branding.logo);
+  }
+
   let page = pdf.addPage([pageW, pageH]);
   let y = pageH - margin;
+
+  const drawHeader = () => {
+    if (!branding) return;
+    const top = pageH - 42;
+    if (embeddedLogo) {
+      const scale = Math.min(110 / embeddedLogo.width, 38 / embeddedLogo.height, 1);
+      page.drawImage(embeddedLogo, { x: margin, y: top - embeddedLogo.height * scale + 8, width: embeddedLogo.width * scale, height: embeddedLogo.height * scale });
+    }
+    const nameWidth = bold.widthOfTextAtSize(branding.companyName, 9);
+    page.drawText(branding.companyName, { x: pageW - margin - nameWidth, y: top - 8, font: bold, size: 9 });
+    page.drawLine({ start: { x: margin, y: pageH - 88 }, end: { x: pageW - margin, y: pageH - 88 }, thickness: 0.7, color: rgb(0.72, 0.75, 0.8) });
+    y = pageH - 108;
+  };
+  drawHeader();
 
   const drawLine = (text: string, f = font, size = fontSize) => {
     if (y < margin) {
       page = pdf.addPage([pageW, pageH]);
       y = pageH - margin;
+      drawHeader();
     }
     page.drawText(text, { x: margin, y, font: f, size });
     y -= size * 1.5;

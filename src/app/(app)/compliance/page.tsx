@@ -5,6 +5,7 @@ import { can } from "@/lib/rbac";
 import { createReminder, updateReminderStatus } from "@/lib/actions";
 import { ActionForm } from "@/components/action-form";
 import { PageHeader, Table, Th, Td, Badge, Button, EmptyState, Input, Label, Select, Textarea, Card, CardContent, CardHeader, CardTitle } from "@/components/ui";
+import { effectivePlan, hasFeature, PLAN_CONFIG } from "@/lib/billing";
 
 const TYPES = [
   "probationary_evaluation", "regularization_due", "contract_expiration", "missing_documents",
@@ -16,6 +17,16 @@ export default async function CompliancePage() {
   const session = await requireSession();
   if (!can(session.role, "compliance.read")) redirect("/dashboard");
   const supabase = await createClient();
+  const { data: company } = await supabase.from("companies").select("plan, paid_until, plan_expires_at").eq("id", session.companyId).single();
+  const plan = effectivePlan(company ?? {});
+  if (!hasFeature(plan, "compliance_dashboard")) {
+    return (
+      <>
+        <PageHeader title="Compliance Reminders" subtitle="Available on Business, Pro, and Enterprise plans" />
+        <EmptyState title="Upgrade required" hint={`${PLAN_CONFIG[plan].name} does not include the compliance dashboard.`} />
+      </>
+    );
+  }
   const { data: reminders } = await supabase.from("compliance_reminders")
     .select("*, employees:related_employee_id(first_name, last_name)")
     .eq("company_id", session.companyId).order("due_date").limit(100);

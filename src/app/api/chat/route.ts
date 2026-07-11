@@ -2,11 +2,11 @@ import { NextRequest, NextResponse } from "next/server";
 import { getSessionContext } from "@/lib/auth";
 import { createClient } from "@/lib/supabase/server";
 import { buildSystemPrompt } from "@/lib/agent/system-prompt";
-import { classifyRequest, routeRequest, type Plan } from "@/lib/agent/router";
+import { classifyRequest, routeRequest } from "@/lib/agent/router";
 import { runAgent } from "@/lib/agent/orchestrator";
-import { hasGroq, hasOpenAI, hasAnthropic } from "@/lib/agent/providers";
+import { hasGroq, hasOpenAI, hasAnthropic, GROQ_FREE_MODEL } from "@/lib/agent/providers";
 import { rateLimit, LIMITS } from "@/lib/rate-limit";
-import { effectivePlan } from "@/lib/billing";
+import { effectivePlan, PLAN_CONFIG, type Plan } from "@/lib/billing";
 
 export const maxDuration = 120;
 
@@ -57,7 +57,7 @@ export async function POST(req: NextRequest) {
       .eq("conversation_id", conversationId)
       .order("created_at", { ascending: true })
       .limit(40),
-    supabase.from("companies").select("name, plan, plan_expires_at").eq("id", session.companyId).single(),
+    supabase.from("companies").select("name, plan, plan_expires_at, paid_until").eq("id", session.companyId).single(),
   ]);
   const plan: Plan = effectivePlan(company ?? {});
 
@@ -67,10 +67,11 @@ export async function POST(req: NextRequest) {
 
   // free-plan gate for premium capabilities — no model call needed
   if (route.lane === "upgrade_required") {
+    const label = PLAN_CONFIG[plan].name;
     const reply =
-      "Document generation and file analysis are available on the Premium plan. " +
-      "On your current Free plan I can answer HR questions, look up your data (attendance, leaves, employees), " +
-      "and help you navigate the app. Ask your workspace Owner about upgrading to unlock AI document generation, resume analysis, and payroll exports.";
+      `This request is not available on your current ${label} plan. ` +
+      "Free includes AI HR Q&A, policy knowledge base, and limited data lookups. " +
+      "Ask your workspace Owner to upgrade to the plan that unlocks this workflow.";
     await supabase.from("ai_messages").insert({
       conversation_id: conversationId, company_id: session.companyId,
       user_id: session.userId, role: "assistant", content: reply,
@@ -98,9 +99,10 @@ export async function POST(req: NextRequest) {
   }
 
   try {
+    const modelOverride = route.provider === "groq" && plan === "free" ? GROQ_FREE_MODEL : undefined;
     const run = await runAgent(route.provider, systemPrompt, chatHistory, {
       session, supabase, conversationId,
-    });
+    }, { modelOverride });
 
     await supabase.from("ai_messages").insert({
       conversation_id: conversationId, company_id: session.companyId,

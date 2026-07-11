@@ -1,4 +1,5 @@
 import { groqClient, hasGroq, hasOpenAI, hasAnthropic, GROQ_CLASSIFIER_MODEL } from "@/lib/agent/providers";
+import { hasFeature, type Plan } from "@/lib/billing";
 
 export type AIRequestCategory =
   | "simple_question"
@@ -12,7 +13,6 @@ export type AIRequestCategory =
   | "workflow_action"
   | "voice_interaction";
 
-export type Plan = "free" | "premium" | "enterprise";
 export type Lane = "chat" | "task" | "longform" | "upgrade_required";
 
 const CATEGORIES: AIRequestCategory[] = [
@@ -60,13 +60,26 @@ Guide: questions/greetings/app help -> simple_question; policy questions -> comp
   }
 }
 
-const PREMIUM_ONLY: AIRequestCategory[] = [
-  "document_generation", "file_analysis", "disciplinary_document", "legal_sensitive",
-];
-const TASK_TIER: AIRequestCategory[] = [
-  "document_generation", "file_analysis", "payroll_preparation", "workflow_action",
-];
+const TASK_TIER: AIRequestCategory[] = ["document_generation", "file_analysis", "payroll_preparation", "workflow_action"];
 const LONGFORM_TIER: AIRequestCategory[] = ["disciplinary_document", "legal_sensitive"];
+
+function allowedForPlan(category: AIRequestCategory, plan: Plan): boolean {
+  switch (category) {
+    case "document_generation":
+      return hasFeature(plan, "document_generation");
+    case "file_analysis":
+      return hasFeature(plan, "resume_analysis");
+    case "disciplinary_document":
+    case "legal_sensitive":
+      return hasFeature(plan, "premium_document_generation");
+    case "payroll_preparation":
+      return hasFeature(plan, "payroll_summary");
+    case "workflow_action":
+      return hasFeature(plan, "agentic_workflows");
+    default:
+      return true;
+  }
+}
 
 // Category + plan -> execution lane.
 // ponytail: fallbacks cascade Claude -> OpenAI -> Groq so a missing API key degrades instead of breaking.
@@ -75,7 +88,7 @@ export function routeRequest(category: AIRequestCategory, plan: Plan): {
   provider: "groq" | "openai" | "anthropic";
 } {
   const groqOrOpenAI = () => (hasGroq() ? ("groq" as const) : ("openai" as const));
-  if (plan === "free" && PREMIUM_ONLY.includes(category)) {
+  if (!allowedForPlan(category, plan)) {
     return { lane: "upgrade_required", provider: groqOrOpenAI() };
   }
   if (LONGFORM_TIER.includes(category)) {

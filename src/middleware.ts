@@ -1,7 +1,7 @@
 import { createServerClient } from "@supabase/ssr";
 import { NextResponse, type NextRequest } from "next/server";
 
-const PUBLIC_PATHS = ["/", "/login", "/signup", "/forgot-password"];
+const PUBLIC_PATHS = ["/", "/login", "/signup", "/forgot-password", "/privacy", "/terms"];
 
 export async function middleware(request: NextRequest) {
   let response = NextResponse.next({ request });
@@ -23,7 +23,9 @@ export async function middleware(request: NextRequest) {
   const path = request.nextUrl.pathname;
   const isPublic = PUBLIC_PATHS.includes(path) || path.startsWith("/api/") || path.startsWith("/_next");
   if (!user && !isPublic) {
-    return NextResponse.redirect(new URL("/login", request.url));
+    const loginUrl = new URL("/login", request.url);
+    loginUrl.searchParams.set("next", path);
+    return NextResponse.redirect(loginUrl);
   }
   return response;
 }

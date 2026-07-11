@@ -4,6 +4,7 @@ import { createClient } from "@/lib/supabase/server";
 import { can } from "@/lib/rbac";
 import { logAudit } from "@/lib/audit";
 import { rowsToCsv, rowsToXlsx } from "@/lib/docgen";
+import { effectivePlan, hasFeature, PLAN_CONFIG } from "@/lib/billing";
 
 export async function GET(req: NextRequest, { params }: { params: Promise<{ periodId: string }> }) {
   const session = await getSessionContext();
@@ -14,6 +15,11 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ peri
   const { periodId } = await params;
   const fmt = req.nextUrl.searchParams.get("fmt") === "csv" ? "csv" : "xlsx";
   const supabase = await createClient();
+  const { data: company } = await supabase.from("companies").select("plan, paid_until, plan_expires_at").eq("id", session.companyId).single();
+  const plan = effectivePlan(company ?? {});
+  if (!hasFeature(plan, "payroll_export")) {
+    return NextResponse.json({ error: `${PLAN_CONFIG[plan].name} does not include payroll export. Upgrade to Business or higher.` }, { status: 403 });
+  }
   const { data: period } = await supabase.from("payroll_periods").select("*").eq("id", periodId).maybeSingle();
   if (!period) return NextResponse.json({ error: "Period not found" }, { status: 404 });
   if (period.status === "draft") {
